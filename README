@@ -30,7 +30,7 @@ Consider the following interface:
     this.unbind = function(type, fn) {};
   }
 
-Cacheca aims to be make the coding of Model (as in MVC) simple. Whether data coming from a simple associate-hash, RESTful web services, or Html5 database, you data can access and consumed by the same code.
+Cacheca aims to make coding of Model (as in MVC) simple. Whether data coming from a simple associate-hash, RESTful web services, or Html5 database, you data can access and consumed by the same code.
 
   // Model code
   var sales = new EntrySet({name: 'sales-record'}); // data is kept in a client javascript object
