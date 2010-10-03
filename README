@@ -41,7 +41,7 @@ Cacheca aims to be make the coding of Model (as in MVC) simple. Whether data com
     var row = event.entry;
     $('#datagrid').append(gridtemplate.format(id, row.name, row.sales, row.region, row.growth));
   });
-  sales.bind('remove', function(event) {
+  sales.bind('removed', function(event) {
     // ...
   });
 
