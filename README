@@ -1,0 +1,64 @@
+Cacheca.js is the simplest CRUD framework in JavaScript
+
+Consider the following interface:
+
+  /**
+   * DataSet is a generic model (as in Model/View/Control). It provides
+   * a few common functionalities:
+   * 
+   * 1) CRUD method to access item in the set
+   * 2) Events: added, removed, updated
+   * 3) Finders methods
+   * 4) interface for initialization
+   */
+  function DataSet() {
+    this.init = function() {};
+    this.start = function() {};
+  
+    // CRUDB ([C]create, [R]read, [U]update, [D]remove, [B]browse and find)
+    this.browse = function(fn, sumfn) {};
+  
+    this.find = function(filters) {};
+    this.findOnce = function(filters) {};
+  
+    this.read = function(itemId) {};
+    this.update = function(itemId, newState) {};
+    this.create = function(newState) {};
+    this.remove = function(itemId) {};
+  
+    this.bind = function(type, fn) {};
+    this.unbind = function(type, fn) {};
+  }
+
+Cacheca aims to be make the coding of Model (as in MVC) simple. Whether data coming from a simple associate-hash, RESTful web services, or Html5 database, you data can access and consumed by the same code.
+
+  // Model code
+  var sales = new EntrySet({name: 'sales-record'}); // data is kept in a client javascript object
+
+  // View and Control code
+  sales.bind('added', function(event) {
+    var id = event.entryId;
+    var row = event.entry;
+    $('#datagrid').append(gridtemplate.format(id, row.name, row.sales, row.region, row.growth));
+  });
+  sales.bind('remove', function(event) {
+    // ...
+  });
+
+  sales.update('10475', newsales);
+
+No change to view and control code shall the data coming from a RESTful Webservice or database.
+
+  // New Model code
+  var sales = RESTfulDataSet({
+    baseurl: '/beedesk/model',
+    entitytype: 'item',
+    setId: function(entry) {
+      return entry.id;
+    },
+    name: 'sales-record'
+  });
+
+  // View and Control code exactly the same
+
+
