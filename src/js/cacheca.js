@@ -11,14 +11,14 @@
  *   notice, this list of conditions and the following disclaimer in the
  *   documentation and/or other materials provided with the distribution.
  *
- * * Neither the name of the <organization> nor the
+ * * Neither the name of the BeeDesk, Inc. nor the
  *   names of its contributors may be used to endorse or promote products
  *   derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+ * DISCLAIMED. IN NO EVENT SHALL BeeDesk, Inc. BE LIABLE FOR ANY
  * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
  * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
  * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
@@ -30,7 +30,7 @@
 /**
  * DataSet is a generic model (as in Model/View/Control). It provides
  * a few common functionalities:
- * 
+ *
  * 1) CRUD method to access item in the set
  * 2) Events: added, removed, updated
  * 3) Finders methods
@@ -68,7 +68,7 @@ function DataSet() {
 /**
  * BareSet is a partial implementation of DataSet. And, is a component
  * used to build the full implementation (EntrySet).
- * 
+ *
  * @param conf
  * @returns {BareSet}
  *
@@ -104,25 +104,24 @@ function BareSet(conf) {
           if (entry === undefined) {
             // problematic
             matchAll = false;
-            break;        
+            break;
           } else if (filters[key] !== entry[key]) {
             matchAll = false;
-            break;        
+            break;
           }
           matchSome = true; // make sure filter is non-empty
         }
-        result = matchSome && matchAll; 
+        result = matchSome && matchAll;
       } else {
         result = filters(entry);
       }
       return result;
     }
   }, conf);
-  
+
   this.getName = function() {
     return conf.name;
   };
-
   this.findOnce = function(filters) {
     var result;
     for (var id in entries) {
@@ -152,12 +151,12 @@ function BareSet(conf) {
     var count = 0;
     var cont;
     for (var id in entries) {
-      cont = fn(id, entries[id]); 
+      cont = fn(id, entries[id]);
       if (cont === false)
         break;
     }
     if (!!sumfn && $.isFunction(sumfn)) {
-      sumfn(count, cont);      
+      sumfn(count, cont);
     }
     return count;
   };
@@ -238,7 +237,7 @@ function BareSet(conf) {
 
 /**
  * Binder is a component for building data event mechanism.
- * 
+ *
  * @param conf
  * @returns {BareSet}
  *
@@ -246,7 +245,7 @@ function BareSet(conf) {
  */
 function Binder(conf) {
   var handlers = new BareSet(conf);
-  
+
   this.bind = function(type, fn) {
     return handlers.create({type: type, fn: fn});
   };
@@ -266,7 +265,7 @@ function Binder(conf) {
       count++;
       contin = handler.fn(event);
       if (contin === false) {
-        break; 
+        break;
       }
     }
     if (contin !== false) {
@@ -292,10 +291,10 @@ function Binder(conf) {
 
 /**
  * EntrySet is a simple and full implementation of DataSet.
- * 
- * By default, it use BareSet as the underneath components to 
+ *
+ * By default, it use BareSet as the underneath components to
  * store the actual entry. It can be overriden by conf.storeset.
- * 
+ *
  * @see DataSet
  */
 function EntrySet(conf) {
@@ -319,16 +318,16 @@ function EntrySet(conf) {
   var storeset = myconf.storeset;
 
   entries.init = function() {
+    if (!!storeset.init) {
+      storeset.init();
+    }
     myconf.init();
     initialized = true;
   };
   entries.start = function() {
     myconf.start();
-    var count = storeset.browse(function(id, item) {
-      entries.trigger('added', {entryId: id, entry: item});
-    });
-    if (count === 0) {
-      entries.trigger('cut', {});
+    if (!!storeset.start) {
+      storeset.start();
     }
     started = true;
   };
@@ -400,47 +399,65 @@ function EntrySet(conf) {
 /**
  * CachedDataSet is a full implementation of DataSet that provides
  * caching.
- * 
+ *
  * The storeset is the authoritative that can be overridden. An Ajax source
- * might be such a storeset. The CachedDataSet cache all entries from 
+ * might be such a storeset. The CachedDataSet cache all entries from
  * storeset into a BareSet.
- * 
+ *
  * @see DataSet
  *
  * Author: tyip AT beedesk DOT com
  */
 function CachedDataSet(conf) {
 
-  var myconf = $.extend({ 
+  var myconf = $.extend({
     tokens: function(item) {
       return [item.id];
     },
     normalize: function(data) {
       return data;
-    },
-    storeset: new BareSet(conf)
+    }
   }, conf);
 
-  var storeset = myconf.storeset;
+  var name = myconf.name;
+  if (name === undefined || name === null || typeof(name) !== 'string') {
+    console.error("[model:" + name + "] " + "Conf 'name' must be defined.");
+    return;
+  }
+  var storecore = myconf.storeset;
+  if (storecore === undefined || storecore === null) {
+    console.error("[model:" + name + "] " + "Conf 'storeset' must be defined.");
+    return;
+  }
+  var cacheset = myconf.cacheset;
+  if (cacheset === undefined || cacheset === null) {
+    console.log("[model:" + name + "] " + "Default 'in-meory' cache is used.");
+    cacheset = new BareSet($.extend({name: conf.name + ':cache'}, conf));
+  }
 
-  var cacheset = new BareSet($.extend({name: conf.name + ':cache'}, conf));
-
+  var storeset = new BareSet($.extend({name: conf.name + ':cachedstore'}, conf));
+  // wrap the original store set with our code such that we can cache
+  // each item passing to the original storeset
+  myconf.storeset = storeset;
   var entries = new EntrySet(myconf);
 
   entries.getName = function() {
-    return conf.name;
+    return name;
   };
-  
+
   var oldinit = entries.init;
   entries.init = function() {
-    oldinit();
+    if (!!oldinit) {
+      oldinit();
+    }
   };
 
   var oldstart = entries.start;
   entries.start = function() {
-    var count = storeset.browse(function(id, item) {
-      cacheset.create(item);
-      entries.trigger('added', {entryId: id, entry: item});
+    if (!!oldstart) {
+      oldstart();
+    }
+    var count = entries.browse(function() {
     });
     return true;
   };
@@ -450,8 +467,8 @@ function CachedDataSet(conf) {
     var cont;
     cont = cacheset.browse(fn, filter);
     if (cont !== false) {
-      count = storeset.browse(function(id, item) {
-        var cached = storeset.read(id);
+      count = storecore.browse(function(id, item) {
+        var cached = storecore.read(id);
         if (cached === undefined || cached !== null) {
           cacheset.create(item);
           entries.trigger('added', {entryId: id, entry: item});
@@ -465,11 +482,11 @@ function CachedDataSet(conf) {
 
   entries.read = function(itemId) {
     var entry;
-    if (itemId !== undefined && itemId !== null) { 
+    if (itemId !== undefined && itemId !== null) {
       entry = cacheset.read(itemId);
       if (entry === undefined || entry === null) {
         try {
-          entry = storeset.read(itemId);
+          entry = storecore.read(itemId);
           if (entry !== undefined && entry !== null) {
             cacheset.create(entry);
           } else {
@@ -485,18 +502,18 @@ function CachedDataSet(conf) {
 
   entries.update = function(itemId, newState) {
     var oldState = cacheset.read(itemId);
-    storeset.update(itemId, newState, oldState);
+    storecore.update(itemId, newState, oldState);
     cacheset.update(itemId, newState, oldState);
   };
 
   entries.create = function(newState) {
-    storeset.create(newState);
+    storecore.create(newState);
     cacheset.create(newState);
   };
 
   entries.remove = function(itemId) {
     var oldState = cacheset.read(itemId);
-    storeset.remove(itemId, oldState);
+    storecore.remove(itemId, oldState);
     cacheset.remove(itemId, oldState);
   };
 
@@ -543,18 +560,24 @@ function RESTfulDataSet(conf) {
   };
 
   var ajaxBrowse = function(fn, filters) {
+    var searchString = '';
+    if (!!filters) {
+      searchString = HashSearch.getSearchString(filters);
+    }
     $.ajax({
       type: 'GET',
-      url: conf.baseurl + '/l/' + conf.entitytype, 
+      url: conf.baseurl + '/l/' + conf.entitytype + searchString,
       dataType: 'json',
       success: function(raw) {
-        var data = conf.normalize(raw);        
+        var data = conf.normalize(raw);
         var list = data.items;
         for (var j=0, len=list.length; j<len; j++) {
           var entry = list[j];
           var id = conf.getId(entry);
           try {
-            fn(id, entry);
+            if (!!fn) {
+              fn(id, entry);
+            }
           } catch(e) {
             console.error('exception invoke: ' + e);
           }
@@ -566,20 +589,21 @@ function RESTfulDataSet(conf) {
     });
   };
 
-  var ajaxcommon = function(options) {
+  var ajaxcommon = function(fn, options) {
     var ajaxoptions = $.extend({
         success: function(data) {
           $.extend(ajaxoptions.entity, data.entity);
           $.extend(ajaxoptions.oldentity, data.oldentity);
+          fn(data);
         },
         error: processError,
         dataType: 'json',
-        async: false,
+        async: true,
         entity: {},
         oldentity: {},
         data: {}
       }, options);
-    
+
     if (ajaxoptions.entity != undefined) {
       delete ajaxoptions.entity;
     }
@@ -590,24 +614,35 @@ function RESTfulDataSet(conf) {
   };
 
   var storeset = new function() {
+    this.read = function(id, entity) {
+      var url = conf.baseurl + '/e/' + conf.entitytype + '/' + id;
+      var fn = function(data) {
+        // @TODO
+      };
+      ajaxcommon(fn, {type: 'GET', url: url, data: $.toJSON({entity:entity}), entity: entity});
+    };
+
     this.create = function(entity) {
       var url = conf.baseurl + '/e/' + conf.entitytype + '/';
-      ajaxcommon({type: 'PUT', url: url, data: $.toJSON({entity: entity}), entity: entity});
+      var fn = function(data) {
+      };
+      ajaxcommon(fn, {type: 'PUT', url: url, data: $.toJSON({entity: entity}), entity: entity});
     };
-  
-    this.read = function(id, entity) {
-      url: conf.baseurl + '/e/' + conf.entitytype + '/' + id, 
-      ajaxcommon({type: 'GET', url: url, data: $.toJSON({entity:entity}), entity: entity});
-    };
-  
+
     this.update = function(id, entity, oldentity) {
-      url: conf.baseurl + '/e/' + conf.entitytype + '/' + id, 
-      ajaxcommon({type: 'POST', url: url, data: $.toJSON({entity:entity, oldentity: oldentity})});
+      var url = conf.baseurl + '/e/' + conf.entitytype + '/' + id;
+      var fn = function(item) {
+        entries.trigger("updated", {entryId: id, entry: item, oldentry: oldentity});
+      };
+      ajaxcommon(fn, {type: 'POST', url: url, data: $.toJSON({entity:entity, oldentity: oldentity})});
     };
-  
+
     this.remove = function(id, entity) {
-      url: conf.baseurl + '/e/' + conf.entitytype + '/' + id, 
-      ajaxcommon({type: 'DELETE', url: url, data: $.toJSON({oldentity: entity})});
+      var url = conf.baseurl + '/e/' + conf.entitytype + '/' + id;
+      var fn = function(data) {
+
+      };
+      ajaxcommon(fn, {type: 'DELETE', url: url, data: $.toJSON({oldentity: entity})});
     };
 
     this.browse = function(fn, filter) {
@@ -616,16 +651,6 @@ function RESTfulDataSet(conf) {
   };
 
   var entries = new CachedDataSet($.extend(conf, {storeset: storeset}));
-
-  var oldinit = entries.init;
-  entries.init = function() {
-    oldinit();
-  };
-  
-  var oldstart = entries.start;
-  entries.start = function() {
-    oldstart();
-  };
 
   entries.getErrorHandler = function() {
     return errorHandler;
