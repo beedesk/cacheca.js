@@ -1,24 +1,19 @@
 /*
- * Copyright (c) 2010, BeeDesk, Inc.
+ * Copyright (c) 2010, BeeDesk, Inc., unless otherwise noted.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  * * Redistributions of source code must retain the above copyright
  *   notice, this list of conditions and the following disclaimer.
- *
  * * Redistributions in binary form must reproduce the above copyright
  *   notice, this list of conditions and the following disclaimer in the
  *   documentation and/or other materials provided with the distribution.
  *
- * * Neither the name of the BeeDesk, Inc. nor the
- *   names of its contributors may be used to endorse or promote products
- *   derived from this software without specific prior written permission.
- *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL BeeDesk, Inc. BE LIABLE FOR ANY
+ * DISCLAIMED. IN NO EVENT SHALL BeeDesk, Inc. AND ITS LICENSORS BE LIABLE FOR ANY
  * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
  * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
  * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
@@ -27,50 +22,156 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **/
 
-// Array Remove - By John Resig (MIT Licensed)
-Array.prototype.arrayremove = function(from, to) {
-  var rest = this.slice((to || from) + 1 || this.length);
-  this.length = from < 0 ? this.length + from : from;
-  return this.push.apply(this, rest);
-};
-
-Array.prototype.fillWithKey = function(hash) {
-  for (var key in hash) {
-    this.push(key);
-  }
-  return this;
-};
-
-String.prototype.trim = function() { return this.replace(/^\s+|\s+$/, ''); };
-
 jQuery.fn.reverse = [].reverse;
 
-// Credit: http://delete.me.uk/2005/03/iso8601.html
-Date.parseISO8601 = function(string) {
-  var regexp = "([0-9]{4})(-([0-9]{2})(-([0-9]{2})" +
-      "(T([0-9]{2}):([0-9]{2})(:([0-9]{2})(\.([0-9]+))?)?" +
-      "(Z|(([-+])([0-9]{2}):([0-9]{2})))?)?)?)?";
-  var d = string.match(new RegExp(regexp));
+var Dates = new function() {
+  // <Mike Koss> - released into the public domain.
+  // Obtained from pageforest.com
+  //------------------------------------------------------------------
+  // ISO 8601 Date Formatting YYYY-MM-DDTHH:MM:SS.sssZ (where Z
+  // could be +HH or -HH for non UTC) Note that dates are inherently
+  // stored at UTC dates internally. But we infer that they denote
+  // local times by default. If the dt.__tz exists, it is assumed to
+  // be an integer number of hours offset to the timezone for which
+  // the time is to be indicated (e.g., PST = -08). Callers should
+  // set dt.__tz = 0 to fix the date at UTC. All other times are
+  // adjusted to designate the local timezone.
+  // -----------------------------------------------------------------
 
-  var offset = 0;
-  var date = new Date(d[1], 0, 1);
+  // Default timezone = local timezone
+  var tzDefault = -(new Date().getTimezoneOffset()) / 60;
 
-  if (d[3]) { date.setMonth(d[3] - 1); }
-  if (d[5]) { date.setDate(d[5]); }
-  if (d[7]) { date.setHours(d[7]); }
-  if (d[8]) { date.setMinutes(d[8]); }
-  if (d[10]) { date.setSeconds(d[10]); }
-  if (d[12]) { date.setMilliseconds(Number("0." + d[12]) * 1000); }
-  if (d[14]) {
-      offset = (Number(d[16]) * 60) + Number(d[17]);
-      offset *= ((d[15] == '-') ? 1 : -1);
+  // Return an integer as a string using a fixed number of digits,
+  // (require a sign if fSign).
+  function fixedDigits(value, digits, fSign) {
+      var s = "";
+      var fNeg = (value < 0);
+      if (digits == undefined) {
+          digits = 0;
+      }
+      if (fNeg) {
+          value = -value;
+      }
+      value = Math.floor(value);
+
+      for (; digits > 0; digits--) {
+          s = (value % 10) + s;
+          value = Math.floor(value / 10);
+      }
+
+      if (fSign || fNeg) {
+          s = (fNeg ? "-" : "+") + s;
+      }
+
+      return s;
   }
 
-  offset -= date.getTimezoneOffset();
-  time = (Number(date) + (offset * 60 * 1000));
-  date.setTime(Number(time));
+  this.toISODate = function(dt, fTime) {
+      var dtT = new Date();
+      dtT.setTime(dt.getTime());
 
-  return date;
+      var tz = dt.__tz;
+      if (tz == undefined) {
+          tz = tzDefault;
+      }
+
+      // Adjust the internal (UTC) time to be the local timezone
+      // (add tz hours) Note that setTime() and getTime() are always
+      // in (internal) UTC time.
+      if (tz != 0) {
+          dtT.setTime(dtT.getTime() + 60 * 60 * 1000 * tz);
+      }
+
+      var s = dtT.getUTCFullYear() + "-" +
+          fixedDigits(dtT.getUTCMonth() + 1, 2) + "-" +
+          fixedDigits(dtT.getUTCDate(), 2);
+      var ms = dtT % (24 * 60 * 60 * 1000);
+
+      if (ms || fTime || tz != 0) {
+          s += "T" + fixedDigits(dtT.getUTCHours(), 2) + ":" +
+              fixedDigits(dtT.getUTCMinutes(), 2);
+          ms = ms % (60 * 1000);
+          if (ms) {
+              s += ":" + fixedDigits(dtT.getUTCSeconds(), 2);
+          }
+          if (ms % 1000) {
+              s += "." + fixedDigits(dtT.getUTCMilliseconds(), 3);
+          }
+          if (tz == 0) {
+              s += "Z";
+          } else {
+              s += fixedDigits(tz, 2, true);
+          }
+      }
+      return s;
+  };
+
+  var regISO = new RegExp("^(\\d{4})-?(\\d\\d)-?(\\d\\d)" +
+                          "(T(\\d\\d):?(\\d\\d):?((\\d\\d)" +
+                          "(\\.(\\d{0,6}))?)?(Z|[\\+-]\\d\\d))?$");
+
+  //--------------------------------------------------------------------
+  // Parser is more lenient than formatter. Punctuation between date
+  // and time parts is optional. We require at the minimum,
+  // YYYY-MM-DD. If a time is given, we require at least HH:MM.
+  // YYYY-MM-DDTHH:MM:SS.sssZ as well as YYYYMMDDTHHMMSS.sssZ are
+  // both acceptable. Note that YYYY-MM-DD is ambiguous. Without a
+  // timezone indicator we don't know if this is a UTC midnight or
+  // Local midnight. We default to UTC midnight (the ISOFromDate
+  // function always writes out non-UTC times so we can append the
+  // time zone). Fractional seconds can be from 0 to 6 digits
+  // (microseconds maximum)
+  // -------------------------------------------------------------------
+  this.fromISODate = function(sISO) {
+      Arguments.assertNonNullString(sISO, 'expect non null string.');
+      var e = {"YYYY": 1, "MM": 2, "DD": 3, "hh": 5,
+               'mm': 6, "ss": 8, "sss": 10, "tz": 11};
+      var aParts = sISO.match(regISO);
+      if (!aParts) {
+          return undefined;
+      }
+
+      aParts[e.mm] = aParts[e.mm] || 0;
+      aParts[e.ss] = aParts[e.ss] || 0;
+      aParts[e.sss] = aParts[e.sss] || 0;
+
+      // Convert fractional seconds to milliseconds
+      aParts[e.sss] = Math.round(+('0.' + aParts[e.sss]) * 1000);
+      if (!aParts[e.tz] || aParts[e.tz] === "Z") {
+          aParts[e.tz] = 0;
+      } else {
+          aParts[e.tz] = parseInt(aParts[e.tz]);
+      }
+
+      // Out of bounds checking - we don't check days of the month is correct!
+      if (aParts[e.MM] > 59 || aParts[e.DD] > 31 ||
+          aParts[e.hh] > 23 || aParts[e.mm] > 59 || aParts[e.ss] > 59 ||
+          aParts[e.tz] < -23 || aParts[e.tz] > 23) {
+          return undefined;
+      }
+
+      var dt = new Date();
+
+      dt.setUTCFullYear(aParts[e.YYYY], aParts[e.MM] - 1, aParts[e.DD]);
+
+      if (aParts[e.hh]) {
+          dt.setUTCHours(aParts[e.hh], aParts[e.mm],
+                         aParts[e.ss], aParts[e.sss]);
+      } else {
+          dt.setUTCHours(0, 0, 0, 0);
+      }
+
+      // BUG: For best compatibility - could set tz to undefined if
+      // it is our local tz Correct time to UTC standard (utc = t -
+      // tz)
+      dt.__tz = aParts[e.tz];
+      if (aParts[e.tz]) {
+          dt.setTime(dt.getTime() - dt.__tz * (60 * 60 * 1000));
+      }
+      return dt;
+  };
+  // </Mike Koss>
+  return this;
 };
 
 var HashSearch = new function() {
@@ -87,10 +188,9 @@ var HashSearch = new function() {
     }
     return result;
   };
-  return this;
 
-  // Andy E and other @http://stackoverflow.com/posts/2880929/revisions
   this.search = function(q) {
+    // Andy E and other @http://stackoverflow.com/posts/2880929/revisions
     var results = {};
     var e,
         a = /\+/g,  // Regex for replacing addition symbol with a space
@@ -138,6 +238,32 @@ var Strings = new function() {
   this.mssqlquote = function(name) {
     return "[" + name.replace("]", "]]") + "]";
   };
+  this.trim = function(str) {
+    return str.replace(/^\s+|\s+$/, '');
+  };
+  return this;
+};
+
+var Hashs = new function() {
+  this.apply = function(fn, items) {
+    var result = {};
+    for (var key in items) {
+      result[key] = fn(key, items[key]);
+    }
+    return result;
+  };
+  this.has = function(obj, key) {
+    var result = false;
+    if (!!obj) {
+      for (var name in obj) {
+        if (name === key) {
+          result = true;
+          break;
+        }
+      }
+    }
+    return result;
+  };
   return this;
 };
 
@@ -151,7 +277,6 @@ var Arrays = new function() {
   };
   this.extract = function(names, entity) {
     var result = [];
-    console.log('name: ' + uneval(names) + ' entity: ' + uneval(entity));
     for (var i = 0; i < names.length; ++i) {
       var item = entity[names[i]];
       if (item === undefined || item === null) {
@@ -161,6 +286,12 @@ var Arrays = new function() {
       }
     }
     return result;
+  };
+  this.keys = function(hash) {
+    for (var key in hash) {
+      this.push(key);
+    }
+    return this;
   };
   this.intersect = function(ths, that, sorted) {
     // intersect 2 arrays and return 3 (left, middle, right) where the middle is
@@ -210,6 +341,58 @@ var Arrays = new function() {
   };
   this.clone = function(array) {
     return array.slice(0);
+  };
+  this.arrayremove = function(from, to) {
+    //Array Remove - By John Resig (MIT Licensed)
+    var rest = this.slice((to || from) + 1 || this.length);
+    this.length = from < 0 ? this.length + from : from;
+    return this.push.apply(this, rest);
+  };
+  return this;
+};
+
+var Arguments = new function() {
+
+  var instance = this;
+
+  this.isNonNull = function(arg) {
+    return (arg !== undefined && arg !== null);
+  };
+  this.assertNonNull = function(arg, message) {
+    if (!instance.isNonNull(arg)) {
+      throw(message || 'Parameter is null');
+    }
+  };
+  this.warnNonNull = function(arg, message) {
+    if (!instance.isNonNull(arg)) {
+      console.warn(message || 'Parameter is null');
+    }
+  };
+  this.isNonNullString = function(arg) {
+    return (arg !== undefined && arg !== null && typeof(arg) === 'string');
+  };
+  this.assertNonNullString = function(arg, message) {
+    if (!instance.isNonNullString(arg)) {
+      throw(message || 'Parameter is null');
+    }
+  };
+  this.warnNonNullString = function(arg, message) {
+    if (!instance.isNonNullString(arg)) {
+      console.warn(message || 'Parameter is null');
+    }
+  };
+  this.isNonNullFn = function(arg) {
+    return (arg !== undefined && arg !== null && $.isFunction(arg));
+  };
+  this.assertNonNullFn = function(arg, message) {
+    if (!instance.isNonNullFn(arg)) {
+      throw(message || 'Parameter is null');
+    }
+  };
+  this.assertNonNullFn = function(arg, message) {
+    if (!instance.isNonNullFn(arg)) {
+      console.warn(message || 'Parameter is null');
+    }
   };
   return this;
 };
