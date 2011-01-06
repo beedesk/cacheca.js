@@ -831,7 +831,7 @@ function RESTfulDataSet(conf) {
   };
 
   this.read = function(id, fn, errFn) {
-    Arguments.assertNonNull(entryId, conf.name + ".read: expect argument 'entryId'.");
+    Arguments.assertNonNull(id, conf.name + ".read: expect argument 'entryId'.");
     Arguments.assertNonNull(fn, conf.name + ".read: expect argument 'fn'.");
 
     errFn = errFn || DEFAULT_ERR;
@@ -894,6 +894,10 @@ function RESTfulDataSet(conf) {
   this.browse = function(fn, filter) {
     return ajaxBrowse(fn, filter);
   };
+
+  this.init = function() {};
+
+  this.start = function() {};
 
   var entries = $.extend(this, new SimpleBinder({name: 'pageforest-binder'}));
 
