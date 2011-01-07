@@ -39,22 +39,21 @@ function BareSet(conf) {
   this.start = function() {};
 
   // CRUDB ([C]create, [R]read, [U]update, [D]remove, [B]browse and find)
-  this.browse = function(fn, sumfn) {};
+  this.browse = function(fn, err, sumfn, filters) {};
 
   this.find = function(filters) {};
 
   this.findOnce = function(filters) {};
 
-  this.read = function(itemId, fn) {};
+  this.read = function(itemId, fn, err) {};
 
-  this.update = function(itemId, newState) {};
+  this.update = function(itemId, newState, oldState, fn, err) {};
 
-  this.create = function(newState) {};
+  this.create = function(newState, fn, err) {};
 
-  this.remove = function(itemId) {};
+  this.remove = function(itemId, fn, err) {};
 
   this.name = (conf && conf.name) || "Generic DataSet";
-
 }
 
 /**
@@ -167,7 +166,10 @@ function SimpleBareSet(conf) {
     return result;
   };
 
-  this.browse = function(fn, sumfn, errFn) {
+  this.browse = function(fn, errFn, sumFn, filters) {
+    if (!!filters) {
+      console.error("browse(filter) is not supported!");
+    }
     var count = 0;
     var cont;
     for (var id in entries) {
@@ -457,8 +459,8 @@ function EntrySet(conf) {
     });
   };
 
-  entries.browse = function(fn, filters) {
-    innerset.browse(fn, filters);
+  entries.browse = function(fn, err, sumFn, filters) {
+    innerset.browse(fn, err, sumFn, filters);
   };
 
   entries.findOnce = function(filters) {
@@ -617,7 +619,11 @@ function CachedDataSet(conf) {
       console.log('minus: ' + Dates.toISODate(date.add({hours: -1})));
       merge(Dates.toISODate(date.add({hours: -1})));
       return false; // we only need one item
-    }, function(count) {
+    }, 
+    function() {
+      // @TODO handle error
+    },
+    function(count) {
       if (count >= 0) {
         merge(Dates.toISODate(new Date(0)));
       }
@@ -625,10 +631,10 @@ function CachedDataSet(conf) {
     return true;
   };
 
-  innerset.browse = function(fn, filter) {
+  innerset.browse = function(fn, err, sumFn, filter) {
     var count = 0;
     var cont;
-    cont = cacheset.browse(fn, filter);
+    cont = cacheset.browse(fn, err, sumFn, filter);
     if (cont !== false) {
       count = storeset.browse(function(id, item) {
         cacheset.read(id, function() {}, function(id) {
@@ -757,26 +763,16 @@ function RESTfulDataSet(conf) {
 
   var errorHandler = new SimpleBinder({name: ((conf? conf.name? conf.name + '.' :'':'') + 'event-handler')});
 
-  var processError = function(request, textStatus, errorThrown) {
-    errorHandler.trigger(request.status.toString(), {request: request});
-    $('#error-request').text("url: '" + url);
-    $('#error-status').text("request.status: '" + request.status + "' status: '" + textStatus + "'");
-    $('#error-console').html(request.responseText);
-    console.error("url: '" + url);
-    console.error("request.status: '" + request.status + "' status: '" + textStatus + "'");
-    console.error("text: " + request.responseText);
-  };
-
   var normalize = conf.normalize || function(raw) { return raw; };
-
   var itemize = conf.itemize || function(fn, item) {
-    fn(item.id, item);
+    var id = conf.getId(item);
+    fn(id, item);
   };
 
   var EMPTY_FN = function() {};
   var DEFAULT_ERR = function(msg) { console.error(msg); };
 
-  var ajaxBrowse = function(fn, filters) {
+  var ajaxBrowse = function(fn, errFn, sumFn, filters) {
     if (!fn) {
       console.error('Expect fn parameter.');
       throw 'Expect fn parameter.';
@@ -797,8 +793,10 @@ function RESTfulDataSet(conf) {
           }
         }
       },
-      error: processError,
-      data: {},
+      error: function(request, textStatus, errorThrown) {
+        var exception = {on: 'browse', status: textStatus};
+        errFn(exception, {request: request, status: textStatus, exception: errorThrown});
+      },
       async: true
     });
   };
@@ -810,15 +808,11 @@ function RESTfulDataSet(conf) {
           $.extend(ajaxoptions.oldentity, data.oldentity);
           fn(data);
         },
-        error: function(request, textStatus, errorThrown) {
-          processError(request, textStatus, errorThrown);
-          err(textStatus);
-        },
+        error: err,
         dataType: 'json',
         async: true,
         entity: {},
-        oldentity: {},
-        data: {}
+        oldentity: {}
       }, options);
 
     if (ajaxoptions.entity != undefined) {
@@ -831,16 +825,21 @@ function RESTfulDataSet(conf) {
   };
 
   this.read = function(id, fn, errFn) {
-    Arguments.assertNonNull(id, conf.name + ".read: expect argument 'entryId'.");
+    Arguments.assertNonNull(id, conf.name + ".read: expect argument 'id'.");
     Arguments.assertNonNull(fn, conf.name + ".read: expect argument 'fn'.");
 
     errFn = errFn || DEFAULT_ERR;
 
     var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
-    var fn = function(data) {
-      // @TODO
+    var ajaxFn = function(data) {
+      var id = conf.getId(data);
+      fn(id, data);
     };
-    ajaxcommon({type: 'GET', url: url, data: $.toJSON({}), entity: {}}, fn, errFn);
+    var ajaxErr = function(request, textStatus, errorThrown) {
+      var exception = {on: 'read', id: id, status: textStatus};
+      errFn(exception, {request: request, status: textStatus, exception: errorThrown});
+    };
+    ajaxcommon({type: 'GET', url: url, data: $.toJSON({}), entity: {}}, ajaxFn, ajaxErr);
   };
 
   this.create = function(entity, fn, errFn) {
@@ -851,9 +850,16 @@ function RESTfulDataSet(conf) {
     errFn = errFn || DEFAULT_ERR;
 
     var url = conf.baseurl + '/' + conf.entitytype + '/';
-    var fn = function(data) {
+    var data = $.toJSON({entity:entity, oldentity: entity});
+    var ajaxFn = function(data) {
+      var id = conf.getId(data);
+      fn(id, data);
     };
-    ajaxcommon({type: 'PUT', url: url, data: $.toJSON({entity: entity}), entity: entity}, fn, errFn);
+    var ajaxErr = function(request, textStatus, errorThrown) {
+      var exception = {on: 'create', id: id, status: textStatus};
+      errFn(exception, {request: request, status: textStatus, exception: errorThrown});
+    };
+    ajaxcommon({type: 'PUT', url: url, data: data, entity: entity}, ajaxFn, ajaxErr);
   };
 
   this.update = function(id, entity, oldentity, fn, errFn) {
@@ -873,11 +879,27 @@ function RESTfulDataSet(conf) {
     errFn = errFn || DEFAULT_ERR;
 
     var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
-    ajaxcommon({type: 'POST', url: url, data: $.toJSON({entity:entity, oldentity: oldentity})}, fn, errFn);
+    var data = $.toJSON({entity:entity, oldentity: oldentity});
+    var ajaxFn = function(data) {
+      var id = conf.getId(data);
+      fn(id, data);
+    };
+    var ajaxErr = function(request, textStatus, errorThrown) {
+      var exception = {on: 'update', id: id, item: entity, status: textStatus};
+      errFn(exception, {request: request, status: textStatus, exception: errorThrown});
+    };
+    ajaxcommon({type: 'POST', url: url, data: data}, ajaxFn, ajaxErr);
   };
 
-  this.remove = function(id, fn, errFn) {
-    // @TODO add back optional entity for dirty-check
+  this.remove = function(id, oldentity, fn, errFn) {
+    // adjust arguments if 'oldentry' is not specified
+    if (Arguments.isNonNull(oldentity) && $.isFunction(oldentity)) {
+      if (Arguments.isNonNull(fn) && $.isFunction(fn)) {
+        errFn = fn;
+      }
+      fn = oldentity;
+      oldentity = undefined;
+    }
     Arguments.assertNonNull(id, conf.name + ".remove: invalid (null) input.");
     Arguments.warnNonNull(id, conf.name + ".remove: invalid (null) input.");
 
@@ -885,14 +907,18 @@ function RESTfulDataSet(conf) {
     errFn = errFn || DEFAULT_ERR;
 
     var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
-    var fn = function(data) {
-
+    var ajaxFn = function(data) {
+      fn(id, data);
     };
-    ajaxcommon({type: 'DELETE', url: url, data: $.toJSON({oldentity: entity})}, fn, errFn);
+    var ajaxErr = function(request, textStatus, errorThrown) {
+      var exception = {on: 'remove', id: id, item: oldentity, status: textStatus};
+      errFn(exception, {request: request, status: textStatus, exception: errorThrown});
+    };
+    ajaxcommon({type: 'DELETE', url: url, data: $.toJSON({oldentity: oldentity})}, ajaxFn, ajaxErr);
   };
 
-  this.browse = function(fn, filter) {
-    return ajaxBrowse(fn, filter);
+  this.browse = function(fn, err, sumFn, filter) {
+    return ajaxBrowse(fn, err, sumFn, filter);
   };
 
   this.init = function() {};
@@ -1056,8 +1082,8 @@ function FilteredEntries(conf) {
     }
     return count;
   };
-  self.browse = function(fn, filters) {
-    return entries.browse(fn, filters);
+  self.browse = function(fn, err, sumFn, filters) {
+    return entries.browse(fn, err, sumFn, filters);
   };
   self.findOnce = function(filters) {
     var result = entries.findOnce(filters);
