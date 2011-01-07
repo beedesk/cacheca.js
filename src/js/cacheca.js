@@ -859,7 +859,7 @@ function RESTfulDataSet(conf) {
       var exception = {on: 'create', id: id, status: textStatus};
       errFn(exception, {request: request, status: textStatus, exception: errorThrown});
     };
-    ajaxcommon({type: 'PUT', url: url, data: data, entity: entity}, ajaxFn, ajaxErr);
+    ajaxcommon({type: 'POST', url: url, data: data, entity: entity}, ajaxFn, ajaxErr);
   };
 
   this.update = function(id, entity, oldentity, fn, errFn) {
@@ -888,7 +888,7 @@ function RESTfulDataSet(conf) {
       var exception = {on: 'update', id: id, item: entity, status: textStatus};
       errFn(exception, {request: request, status: textStatus, exception: errorThrown});
     };
-    ajaxcommon({type: 'POST', url: url, data: data}, ajaxFn, ajaxErr);
+    ajaxcommon({type: 'PUT', url: url, data: data}, ajaxFn, ajaxErr);
   };
 
   this.remove = function(id, oldentity, fn, errFn) {
