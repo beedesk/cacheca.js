@@ -39,6 +39,9 @@ function BareSet(conf) {
   this.start = function() {};
 
   // CRUDB ([C]create, [R]read, [U]update, [D]remove, [B]browse and find)
+  /**
+   * browse(function fn, function err, [function sumfn], [{} filters])
+   */
   this.browse = function(fn, err, sumfn, filters) {};
 
   this.find = function(filters) {};
@@ -311,7 +314,7 @@ function SimpleBinder(conf) {
         count++;
         contin = handler.fn(event);
         if (contin === false) {
-          break;
+          return false;
         }
       }, function(id, msg) {
         console.error(conf.name + '.handlers:' + uneval(handlers));
@@ -324,7 +327,7 @@ function SimpleBinder(conf) {
           count++;
           contin = handler.fn(event);
           if (contin === false) {
-            break;
+            return false;
           }
         }, function(id) {
           console.error(conf.name + '.handlers:' + uneval(handlers));
@@ -545,7 +548,7 @@ function CachedDataSet(conf) {
     });
   });
   storeset.bind('updated', function(event) {
-    storeset.read(id, function(id, item) {
+    storeset.read(event.entryId, function(id, item) {
       cacheset.read(event.entryId, function(id, item) {
         cacheset.update(item, function(id, item) {
           fullset.trigger('update', {entryId: id, entry: item});
@@ -601,7 +604,8 @@ function CachedDataSet(conf) {
             });
           });
         });
-      }, {namedquery: 'modified-since', params: [since]});
+      }, function() {}, function() {},
+      {namedquery: 'modified-since', params: {since: since}});
     };
 
     // We need localStorage to keep the bookmark for this entity
@@ -610,22 +614,23 @@ function CachedDataSet(conf) {
     cacheset.browse(function(id, item) { // this query get last-modified time
       console.log('checking modified since: [' + item.modified + ']' + ' typeof: ' + typeof(item.modified));
       var lastmodified = item.modified;
-      if (!Arguments.isNonNullString(lastmodified)) {
-        lastmodified = Dates.toISODate(new Date(0));
+      if (!lastmodified) {
+        lastmodified = Dates.toISOString(new Date(0));
       }
-      var date = Dates.fromISODate(lastmodified);
+      var date = Dates.fromISOString(lastmodified);
+      var added = date.addHours(-1);
+      var offsetdate = Dates.toISOString(added);
+      console.log(typeof(item.modified) + ": " + lastmodified + " parsed: " + date.toUTCString() + " offset: " + offsetdate);
 
-      console.log('parsed: ' + date.toISOString());
-      console.log('minus: ' + Dates.toISODate(date.add({hours: -1})));
-      merge(Dates.toISODate(date.add({hours: -1})));
+      merge(offsetdate);
       return false; // we only need one item
-    }, 
+    },
     function() {
       // @TODO handle error
     },
     function(count) {
       if (count >= 0) {
-        merge(Dates.toISODate(new Date(0)));
+        merge(Dates.toISOString(new Date(0)));
       }
     }, {namedquery: 'last-modified'});
     return true;
@@ -1305,7 +1310,7 @@ function DatabaseBareSet(conf) {
     });
   };
 
-  this.browse = function(fn, sumfn, filter) {
+  this.browse = function(fn, err, sumfn, filter) {
     // adjust argument
     if (!Arguments.isNonNullFn(sumfn)) {
       filter = sumfn;
@@ -1404,7 +1409,6 @@ function DatabaseBareSet(conf) {
     var sql = "SELECT " + Strings.join(", ", Arrays.apply(namequote, effectiveFields)) + " FROM " + namequote(entityname)
     + " WHERE " + namequote(idfield) + "=?";
 
-    console.log('sql: ' + sql);
     db.transaction(function(tx) {
       tx.executeSql(sql, values, function(tx, resultset) {
         if (resultset.rows.length > 0) {

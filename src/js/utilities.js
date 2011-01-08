@@ -66,7 +66,7 @@ var Dates = new function() {
       return s;
   }
 
-  this.toISODate = function(dt, fTime) {
+  this.toISOString = function(dt, fTime) {
       var dtT = new Date();
       dtT.setTime(dt.getTime());
 
@@ -122,7 +122,7 @@ var Dates = new function() {
   // time zone). Fractional seconds can be from 0 to 6 digits
   // (microseconds maximum)
   // -------------------------------------------------------------------
-  this.fromISODate = function(sISO) {
+  this.fromISOString = function(sISO) {
       Arguments.assertNonNullString(sISO, 'expect non null string.');
       var e = {"YYYY": 1, "MM": 2, "DD": 3, "hh": 5,
                'mm': 6, "ss": 8, "sss": 10, "tz": 11};
