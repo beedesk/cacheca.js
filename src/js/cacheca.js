@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, BeeDesk, Inc., unless otherwise noted.
+ * Copyright (c) 2010 - 2011, BeeDesk, Inc., unless otherwise noted.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -23,7 +23,7 @@
  **/
 
 /**
- * BareSet is a generic model (as in Model/View/Control). It provides
+ * BareSet is a generic model (as in Model/View/Controller). It provides
  * a few common functionalities:
  *
  * 1) CRUD method to access item in the set
@@ -77,6 +77,9 @@ function Binder(conf) {
 /**
  * DataSet is a BareSet that provides events.
  *
+ * Supports '*', 'added', 'updated', 'removed' events.
+ * Supports 'error/*', 'error/addded', 'error/updated', 'error/removed' events
+ * 
  * @author: tyip AT beedesk DOT com
  */
 function DataSet(conf) {
@@ -181,8 +184,8 @@ function SimpleBareSet(conf) {
       if (cont === false)
         break;
     }
-    if (!!sumfn && $.isFunction(sumfn)) {
-      sumfn(count, cont);
+    if (!!sumFn && $.isFunction(sumFn)) {
+      sumFn(count, cont);
     }
     return count;
   };
@@ -289,7 +292,9 @@ function SimpleBareSet(conf) {
 };
 
 /**
- * SimpleBinder is a simple implementation of Binder which a dispatch multiplexer.
+ * SimpleBinder is a simple implementation of Binder which a dispatcher.
+ * Upon receiving an event (via trigger()), it dispatches it to all
+ * handlers.  
  *
  * @param conf
  * @author: tyip AT beedesk DOT com
@@ -304,15 +309,16 @@ function SimpleBinder(conf) {
   this.unbind = function(type, fn) {
     return handlers.remove({type: type, fn: fn}, EMPTY_FN);
   };
-  this.trigger = function(type, event) {
+  this.trigger = function(type, list) {
     var count = 0;
     var contin; // stop propagation
 
+    var args = Array.prototype.slice.call(arguments).splice(1);
     var ids = handlers.find({type: type});
     for (var j=0, len=ids.length; j < len; j++) {
       handlers.read(ids[j], function(id, handler) {
         count++;
-        contin = handler.fn(event);
+        contin = handler.fn.apply(this, args);
         if (contin === false) {
           return false;
         }
@@ -325,7 +331,7 @@ function SimpleBinder(conf) {
       for (var j=0, len=ids.length; j < len; j++) {
         handlers.read(ids[j], function(id, handler) {
           count++;
-          contin = handler.fn(event);
+          contin = handler.fn.apply(this, args);
           if (contin === false) {
             return false;
           }
@@ -339,14 +345,45 @@ function SimpleBinder(conf) {
 };
 
 /**
- * EntrySet is a simple implementation of DataSet.
+ * Register for dataset
+ */
+var Cacheca = new function() {
+  var instance = $.extend(this, new SimpleBinder({name: 'registered-datasets'}));
+  var sets = {};
+  this.register = function(dataset) {
+    var name = !!dataset.name? dataset.name: null;
+    if (!name) {
+      throw "dataset does not has a name";
+    }
+    sets[name] = dataset;
+    instance.trigger('added', name, dataset);
+  };
+  this.list = function() {
+    return $.extend({}, sets);
+  };
+  this.get = function(key) {
+    return sets[key];
+  };
+};
+
+var DatasetFns = new function() {
+  var instance = this;
+
+  this.EMPTY_FN = function() {};
+
+  this.DEFAULT_ERR = function() {};
+
+};
+
+/**
+ * SimpleDataSet is a simple implementation of DataSet.
  *
  * By default, it use SimpleBareSet as the underneath components to
  * store the actual entry. It can be overriden by conf.innerset.
  *
  * @see DataSet
  */
-function EntrySet(conf) {
+function SimpleDataSet(conf) {
   var started     = false;
   var initialized = false;
 
@@ -366,7 +403,7 @@ function EntrySet(conf) {
   var entries = new DataSet(conf);
   $.extend(entries, new SimpleBinder({name: ((conf? conf.name? conf.name + '.' :'':'') + 'event-handler')}));
 
-  var innerset = myconf.innerset || new BareSet($.extend({name: conf.name + ':entry-inner'}, conf));
+  var innerset = myconf.innerset || new SimpleBareSet($.extend({name: conf.name + ':entry-inner'}, conf));
 
   entries.init = function() {
     myconf.init();
@@ -518,18 +555,18 @@ function CachedDataSet(conf) {
   var DEFAULT_ERR = function(msg) { console.error(msg); };
 
   var storeset = myconf.storeset;
-  var cacheset = myconf.cacheset || new BareSet($.extend({name: myconf.name + ':cache'}, conf));
+  var cacheset = myconf.cacheset || new SimpleBareSet($.extend({name: myconf.name + ':cache'}, conf));
 
   var innerset = new DataSet({name: myconf.name + ':cache-wrapper'});
 
-  var fullset = new EntrySet($.extend({
+  var fullset = new SimpleDataSet($.extend({
     name: conf.name + ':cachedstore',
     innerset: innerset
   }, conf));
 
   storeset.bind('added', function(event) {
     cacheset.read(event.entryId, function() {
-      console.warn('[cacheset merge] item added to storeset is already exists the cache.')
+      console.warn('[cacheset merge] item added to storeset is already exists the cache.');
     }, function(id, item) {
       storeset.read(id, function(id, item) {
         cacheset.create(item, function(id, item) {
@@ -756,6 +793,9 @@ function CachedDataSet(conf) {
  * @author: tyip AT beedesk DOT com
  */
 function RESTfulDataSet(conf) {
+
+  var instance = $.extend(this, new SimpleBinder({name: 'pageforest-binder'}));
+
   // error check
   if (conf.baseurl === undefined) {
     console.error('Parameter "baseurl" is not specified.'); // fatal error
@@ -765,8 +805,6 @@ function RESTfulDataSet(conf) {
   }
 
   var url = conf.baseurl + '/' + conf.entitytype;
-
-  var errorHandler = new SimpleBinder({name: ((conf? conf.name? conf.name + '.' :'':'') + 'event-handler')});
 
   var normalize = conf.normalize || function(raw) { return raw; };
   var itemize = conf.itemize || function(fn, item) {
@@ -799,8 +837,9 @@ function RESTfulDataSet(conf) {
         }
       },
       error: function(request, textStatus, errorThrown) {
-        var exception = {on: 'browse', status: textStatus};
-        errFn(exception, {request: request, status: textStatus, exception: errorThrown});
+        var exception = {on: 'browse', status: textStatus, setname: instance.name};
+        exception.nested = {request: request, status: textStatus, exception: errorThrown}; 
+        errFn(exception);
       },
       async: true
     });
@@ -813,7 +852,11 @@ function RESTfulDataSet(conf) {
           $.extend(ajaxoptions.oldentity, data.oldentity);
           fn(data);
         },
-        error: err,
+        error: function(request, textStatus, errorThrown) {
+          var exception = {on: 'browse', status: textStatus, setname: instance.name};
+          exception.nested = {request: request, status: textStatus, exception: errorThrown}; 
+          err(exception);
+        },
         dataType: 'json',
         async: true,
         entity: {},
@@ -828,6 +871,8 @@ function RESTfulDataSet(conf) {
     }
     $.ajax(ajaxoptions);
   };
+
+  this.name = conf.name;
 
   this.read = function(id, fn, errFn) {
     Arguments.assertNonNull(id, conf.name + ".read: expect argument 'id'.");
@@ -922,37 +967,37 @@ function RESTfulDataSet(conf) {
     ajaxcommon({type: 'DELETE', url: url, data: $.toJSON({oldentity: oldentity})}, ajaxFn, ajaxErr);
   };
 
-  this.browse = function(fn, err, sumFn, filter) {
-    return ajaxBrowse(fn, err, sumFn, filter);
+  this.browse = function(fn, errFn, sumFn, filter) {
+    fn = fn || EMPTY_FN;
+    errFn = errFn || DEFAULT_ERR;
+
+    return ajaxBrowse(fn, errFn, sumFn, filter);
   };
 
   this.init = function() {};
 
   this.start = function() {};
 
-  var entries = $.extend(this, new SimpleBinder({name: 'pageforest-binder'}));
-
-  entries.getErrorHandler = function() {
-    return errorHandler;
-  };
-
-  return entries;
+  return instance;
 } // function RESTfulDataSet()
 
 function AjaxDataSet(conf) {
 
-  var innerset = new BareSet($.extend({name: conf.name + ':ajax-inner'}, conf));
+  // error check
+  if (conf.url === undefined) {
+    console.error('Url is not specified.'); // fatal error
+  }
+
   var myconf = $.extend({
     tokens: function(item) {
       return [item.id];
     },
     normalize: function(data) {
       return data;
-    },
-    storeset: innerset
+    }
   }, conf);
 
-  var entries = new EntrySet(myconf);
+  var entries = new SimpleDataSet(myconf);
 
   var oldinit = entries.init;
   entries.init = function() {
@@ -971,8 +1016,11 @@ function AjaxDataSet(conf) {
         var list = raw.items;
         for (var j=0, len=list.length; j<len; j++) {
           var entry = list[j];
-          innerset.create(entry);
-          entries.trigger('added', {entryId: entry.id, entry: entry});
+          entries.create(entry, function() {
+            //entries.trigger('added', {entryId: entry.id, entry: entry});  
+          }, function() {
+            console.error("some error adding item.");
+          });
         }
       },
       error: function(XMLHttpRequest, textStatus, errorThrown) {
@@ -984,10 +1032,6 @@ function AjaxDataSet(conf) {
     oldstart();
   };
 
-  // error check
-  if (myconf.url === undefined) {
-    console.error('Url is not specified.'); // fatal error
-  }
   return entries;
 }
 
@@ -1003,7 +1047,7 @@ function FilteredEntries(conf) {
     console.error('expect match fn to be set.');
   }
 
-  var entries = new BareSet(conf);
+  var entries = new SimpleBareSet(conf);
 
   var self = new SimpleBinder({name: ((myconf? myconf.name? myconf.name + '.' :'':'') + 'event-handler')});
 
@@ -1055,9 +1099,9 @@ function FilteredEntries(conf) {
       }
     }
   });
-  self.getName = function() {
-    return myconf.name;
-  };
+
+  self.name = myconf.name;
+
   self.read = function(entryId) { // "read into"
     var result;
     result = upstream.read(entryId);
@@ -1309,6 +1353,8 @@ function DatabaseBareSet(conf) {
       );
     });
   };
+
+  this.name = conf.name;
 
   this.browse = function(fn, err, sumfn, filter) {
     // adjust argument
