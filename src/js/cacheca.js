@@ -57,6 +57,7 @@ function BareSet(conf) {
   this.remove = function(itemId, fn, err) {};
 
   this.name = (conf && conf.name) || "Generic DataSet";
+
 }
 
 /**
@@ -72,6 +73,7 @@ function Binder(conf) {
   this.unbind = function(type, fn) {};
 
   this.trigger = function(type, event) {};
+
 }
 
 /**
@@ -79,15 +81,71 @@ function Binder(conf) {
  *
  * Supports '*', 'added', 'updated', 'removed' events.
  * Supports 'error/*', 'error/addded', 'error/updated', 'error/removed' events
- * 
+ *
  * @author: tyip AT beedesk DOT com
  */
 function DataSet(conf) {
 
   var instance = $.extend(new BareSet(conf), new Binder(conf));
 
+  instance.snapbind = function(type, fn) {};
+
   return instance;
 }
+
+/**
+ * Helper class to enable code reuse for common functionalities
+ */
+var CRUDs = new function() {
+  var instance = this;
+  this.DEFAULT_ERR = function(msg) {
+    console.error(msg);
+  };
+  this.EMPTY_FN = function() {
+
+  };
+  this.getCheckedErrorFn = function(errFn) {
+    return errFn || instance.DEFAULT_ERR;
+  };
+  this.getCheckedFn = function(fn) {
+    return fn || instance.EMPTY_FN;
+  };
+  this.snapbind = function(binder, status, params) {
+    Arguments.assertNonNullDataObject(params, binder.name + ".snapbind: expect argument 'params'.");
+
+    if (Arguments.isNonNullFn(params.initialized)) {
+      if (status.initialized) {
+        params.initialized();
+      }
+      binder.bind("initialized", params.initialized);
+    }
+    if (Arguments.isNonNullFn(params.started)) {
+      if (status.started) {
+        params.started();
+      }
+      binder.bind("started", params.initialized);
+    }
+    if (Arguments.isNonNullFn(params.added)) {
+      if (status.initialized) {
+        //@TODO potential timing issue when the set is "starting"
+        // duplicated entries might result.
+        binder.browse(function(id, item) {
+          params.added({entryId: id, entry: item});
+        }, function() {}, function() {});
+      }
+      binder.bind("added", params.added);
+    }
+    if (Arguments.isNonNullFn(params.removed)) {
+      binder.bind("removed", params.removed);
+    }
+    if (Arguments.isNonNullFn(params.updated)) {
+      binder.bind("updated", params.updated);
+    }
+    if (Arguments.isNonNullFn(params.error)) {
+      binder.bind("error", params.error);
+    }
+  };
+};
 
 /**
  * SimpleBareSet is an implementation of BareSet. It keeps all entry
@@ -138,9 +196,6 @@ function SimpleBareSet(conf) {
       return result;
     }
   }, conf);
-
-  var EMPTY_FN = function() {};
-  var DEFAULT_ERR = function(msg) { console.error(msg); };
 
   var idcount    = 10000;
   var entries    = {};
@@ -194,7 +249,7 @@ function SimpleBareSet(conf) {
     Arguments.assertNonNull(entryId, conf.name + ".read: expect argument 'entryId'.");
     Arguments.assertNonNull(fn, conf.name + ".read: expect argument 'fn'.");
 
-    errFn = errFn || DEFAULT_ERR;
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var result;
     var rawentry = entries[entryId];
@@ -215,8 +270,8 @@ function SimpleBareSet(conf) {
     Arguments.assertNonNull(entry, conf.name + ".create: expect argument 'entry'.");
     Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var id = conf.setId(entry);
     if (Arguments.isNonNull(id)) {
@@ -245,8 +300,8 @@ function SimpleBareSet(conf) {
     Arguments.assertNonNull(entryId, conf.name + ".update: expect argument 'entryId'.");
     Arguments.assertNonNull(newentry, conf.name + ".update: expect argument 'newentry'.");
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var rawentry = entries[entryId];
     if (Arguments.isNonNull(rawentry)) {
@@ -263,13 +318,21 @@ function SimpleBareSet(conf) {
     }
   };
 
-  this.remove = function(entryId, fn, errFn) {
-    // @TODO add back optional entity for dirty-check
-    Arguments.assertNonNull(entryId, conf.name + ".remove: invalid (null) input.");
-    Arguments.warnNonNull(entryId, conf.name + ".remove: invalid (null) input.");
+  this.remove = function(entryId, oldentry, fn, errFn) {
+    // adjust argument for optional 'oldentry'
+    if (Arguments.isNonNull(oldentry) && $.isFunction(oldentry)) {
+      if (Arguments.isNonNull(fn) && $.isFunction(fn)) {
+        errFn = fn;
+      }
+      fn = oldentry;
+      oldentry = undefined;
+    }
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    Arguments.assertNonNull(entryId, conf.name + '.remove: expect entryId.');
+    Arguments.warnNonNull(fn, conf.name + '.remove: expect fn.');
+
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var rawentry = entries[entryId];
     if (Arguments.isNonNull(rawentry)) {
@@ -294,20 +357,18 @@ function SimpleBareSet(conf) {
 /**
  * SimpleBinder is a simple implementation of Binder which a dispatcher.
  * Upon receiving an event (via trigger()), it dispatches it to all
- * handlers.  
+ * handlers.
  *
  * @param conf
  * @author: tyip AT beedesk DOT com
  */
 function SimpleBinder(conf) {
-  var EMPTY_FN = function() {};
-
   var handlers = new SimpleBareSet(conf);
   this.bind = function(type, fn) {
-    return handlers.create({type: type, fn: fn}, EMPTY_FN);
+    return handlers.create({type: type, fn: fn}, function() {}, function() {});
   };
   this.unbind = function(type, fn) {
-    return handlers.remove({type: type, fn: fn}, EMPTY_FN);
+    return handlers.remove({type: type, fn: fn}, function() {}, function() {});
   };
   this.trigger = function(type, list) {
     var count = 0;
@@ -366,15 +427,6 @@ var Cacheca = new function() {
   };
 };
 
-var DatasetFns = new function() {
-  var instance = this;
-
-  this.EMPTY_FN = function() {};
-
-  this.DEFAULT_ERR = function() {};
-
-};
-
 /**
  * SimpleDataSet is a simple implementation of DataSet.
  *
@@ -397,11 +449,18 @@ function SimpleDataSet(conf) {
     }
   }, conf);
 
-  var EMPTY_FN = function() {};
-  var DEFAULT_ERR = function(msg) { console.error(msg); };
-
   var entries = new DataSet(conf);
   $.extend(entries, new SimpleBinder({name: ((conf? conf.name? conf.name + '.' :'':'') + 'event-handler')}));
+
+  var getMyErrFn = function(err) {
+    var mine = function(exception) {
+      if (!!err) {
+        err(exception);
+      }
+      entries.trigger("error", exception);
+    };
+    return mine;
+  };
 
   var innerset = myconf.innerset || new SimpleBareSet($.extend({name: conf.name + ':entry-inner'}, conf));
 
@@ -421,28 +480,32 @@ function SimpleDataSet(conf) {
     started = true;
   };
 
+  entries.snapbind = function(params) {
+    CRUDs.snapbind(entries, {initialized: initialized, started: started}, params);
+  };
+
   entries.read = function(entryId, fn, errFn) {
     Arguments.assertNonNull(entryId, conf.name + ".read: expect argument 'entryId'.");
     Arguments.assertNonNull(fn, conf.name + ".read: expect argument 'fn'.");
 
-    errFn = errFn || DEFAULT_ERR;
+    var myErrFn = getMyErrFn(errFn);
 
-    innerset.read(entryId, fn, errFn);
+    innerset.read(entryId, fn, myErrFn);
   };
 
   entries.create = function(entry, fn, errFn) {
     Arguments.assertNonNull(entry, conf.name + ".create: expect argument 'entry'.");
     Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    var myErrFn = getMyErrFn(errFn);
 
     innerset.create(entry, function(id, item) {
       fn(id, item);
       if (myconf.isEventEnabled()) {
         entries.trigger('added', {entryId: id, entry: item});
       }
-    }, errFn);
+    }, myErrFn);
   };
 
   entries.update = function(entryId, newentry, oldentry, fn, errFn) {
@@ -458,8 +521,8 @@ function SimpleDataSet(conf) {
     Arguments.assertNonNull(entryId, conf.name + ".update: expect argument 'entryId'.");
     Arguments.assertNonNull(newentry, conf.name + ".update: expect argument 'newentry'.");
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    var myErrFn = getMyErrFn(errFn);
 
     innerset.update(entryId, newentry, oldentry, function(id, item) {
       fn(id, item);
@@ -472,7 +535,7 @@ function SimpleDataSet(conf) {
           entries.trigger('updated', event);
         }
       }
-    }, errFn);
+    }, myErrFn);
   };
 
   entries.remove = function(entryId, oldentry, fn, errFn) {
@@ -488,19 +551,21 @@ function SimpleDataSet(conf) {
     Arguments.assertNonNull(entryId, conf.name + '.remove: expect entryId.');
     Arguments.warnNonNull(fn, conf.name + '.remove: expect fn.');
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    var myErrFn = getMyErrFn(errFn);
 
     innerset.remove(entryId, oldentry, function(id, item) {
       fn(id, item);
       if (myconf.isEventEnabled()) {
         entries.trigger('removed', {entryId: id, oldentry: item});
       }
-    });
+    }, myErrFn);
   };
 
   entries.browse = function(fn, err, sumFn, filters) {
-    innerset.browse(fn, err, sumFn, filters);
+    var myErrFn = getMyErrFn(err);
+
+    innerset.browse(fn, myErrFn, sumFn, filters);
   };
 
   entries.findOnce = function(filters) {
@@ -551,9 +616,6 @@ function CachedDataSet(conf) {
   Arguments.assertNonNull(myconf.storeset, "[model:" + myconf.name + "] " + "Conf 'storeset' must be defined.");
   Arguments.warnNonNull(myconf.cacheset, "[model:" + myconf.name + "] " + "Default 'in-meory' cache is used.");
 
-  var EMPTY_FN = function() {};
-  var DEFAULT_ERR = function(msg) { console.error(msg); };
-
   var storeset = myconf.storeset;
   var cacheset = myconf.cacheset || new SimpleBareSet($.extend({name: myconf.name + ':cache'}, conf));
 
@@ -564,6 +626,10 @@ function CachedDataSet(conf) {
     innerset: innerset
   }, conf));
 
+  var internalerr = function(exception) {
+    fullset.trigger("error", exception);
+  };
+
   storeset.bind('added', function(event) {
     cacheset.read(event.entryId, function() {
       console.warn('[cacheset merge] item added to storeset is already exists the cache.');
@@ -571,17 +637,18 @@ function CachedDataSet(conf) {
       storeset.read(id, function(id, item) {
         cacheset.create(item, function(id, item) {
           fullset.trigger('added', {entryId: id, entry: item});
-        });
-      });
+        }, internalerr);
+      }, internalerr);
     });
   });
   storeset.bind('removed', function(event) {
     cacheset.read(event.entryId, function(id, item) {
       cacheset.remove(id, function(id, item) {
         fullset.trigger('removed', {entryId: id, entry: item});
-      });
-    }, function(id) {
-      console.warn('[cacheset merge] item removed from storeset cannot be found. id: ' + id);
+      }, internalerr);
+    }, function(exception) {
+      console.warn('[cacheset merge] item removed from storeset cannot be found. id: ' + exception.id);
+      internalerr(exception);
     });
   });
   storeset.bind('updated', function(event) {
@@ -589,7 +656,7 @@ function CachedDataSet(conf) {
       cacheset.read(event.entryId, function(id, item) {
         cacheset.update(item, function(id, item) {
           fullset.trigger('update', {entryId: id, entry: item});
-        });
+        }, internalerr);
       }, function(id) {
         cacheset.create(item, function(id, item) {
           fullset.trigger('added', {entryId: id, entry: item});
@@ -597,9 +664,7 @@ function CachedDataSet(conf) {
           console.warn('[cacheset merge] update item cannot be added or updated. id: ' + id);
         });
       });
-    }, function(id) {
-      console.warn('[cacheset merge] update item to storeset is deleted. id: ' + id);
-    });
+    }, internalerr);
   });
 
   var oldinit = innerset.init;
@@ -625,12 +690,16 @@ function CachedDataSet(conf) {
     }
     cacheset.browse(function(id, item) {
       fullset.trigger('added', {entryId: id, entry: item});
-    });
+    }, internalerr);
     if (!!storeset.start) {
       storeset.start();
     }
 
     var merge = function(since) {
+      var opt;
+      if (!!since) {
+        opt = {namedquery: 'modified-since', params: {since: since}};
+      }
       console.log('merge() called');
       storeset.browse(function(id, item) { // this query have all item modified since
         cacheset.read(id, function() {}, function(id) { // make sure cache does *not* have it.
@@ -639,10 +708,18 @@ function CachedDataSet(conf) {
             cacheset.create(item, function(id, item) { // create item
               fullset.trigger('added', {entryId: id, entry: item});
             });
-          });
+          }, internalerr);
         });
-      }, function() {}, function() {},
-      {namedquery: 'modified-since', params: {since: since}});
+      },
+      internalerr,
+      function(count) {
+        if (count === 0) {
+          console.log("[" + storeset.name + "] browse(" + uneval(opt) + ") yield no element.");
+        } else {
+          console.log("[" + storeset.name + "] merged.");
+        }
+      },
+      opt);
     };
 
     // We need localStorage to keep the bookmark for this entity
@@ -655,6 +732,9 @@ function CachedDataSet(conf) {
         lastmodified = Dates.toISOString(new Date(0));
       }
       var date = Dates.fromISOString(lastmodified);
+      if (!date) {
+        date = new Date(0);
+      }
       var added = date.addHours(-1);
       var offsetdate = Dates.toISOString(added);
       console.log(typeof(item.modified) + ": " + lastmodified + " parsed: " + date.toUTCString() + " offset: " + offsetdate);
@@ -662,52 +742,33 @@ function CachedDataSet(conf) {
       merge(offsetdate);
       return false; // we only need one item
     },
-    function() {
-      // @TODO handle error
-    },
+    internalerr,
     function(count) {
-      if (count >= 0) {
-        merge(Dates.toISOString(new Date(0)));
+      if (count === 0) {
+        var zerodate = "1970-1-1T00:00:00.0000Z";
+        merge(zerodate);
       }
     }, {namedquery: 'last-modified'});
     return true;
   };
 
   innerset.browse = function(fn, err, sumFn, filter) {
-    var count = 0;
-    var cont;
-    cont = cacheset.browse(fn, err, sumFn, filter);
-    if (cont !== false) {
-      count = storeset.browse(function(id, item) {
-        cacheset.read(id, function() {}, function(id) {
-          innerset.read(id, fn);
-        });
-        return cont;
-      }, filter);
-    }
-    return count;
+    cacheset.browse.apply(this, arguments);
   };
 
   innerset.read = function(itemId, fn, errFn) {
     Arguments.assertNonNull(itemId, conf.name + '.read: expect itemid.');
     Arguments.assertNonNull(fn, conf.name + '.read: expect fn.');
 
-    errFn = errFn || DEFAULT_ERR;
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     cacheset.read(itemId, fn, function(id) {
-      try {
-        entry = storeset.read(itemId, function(id, item) {
-          cacheset.create(item, function(id, item) {
-            //innerset.trigger('added', {entryId: id, entry: item});
-            fn(id, item);
-          });
+      entry = storeset.read(itemId, function(id, item) {
+        cacheset.create(item, function(id, item) {
+          fn(id, item);
         });
-      } catch (e) {
-        console.error(uneval(e));
-      }
-    }, function(id) {
-      errFn(id);
-    });
+      }, errFn);
+    }, errFn);
   };
 
   innerset.update = function(itemId, newentry, oldentry, fn, errFn) {
@@ -723,8 +784,8 @@ function CachedDataSet(conf) {
     Arguments.assertNonNull(itemId, conf.name + '.update: expect itemid.');
     Arguments.warnNonNull(fn, conf.name + '.updated: expect fn.');
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var oldState = cacheset.read(itemId);
     storenewentryte(itemId, newentry, oldentry, function(id, newentry, oldentry) {
@@ -736,19 +797,14 @@ function CachedDataSet(conf) {
     Arguments.assertNonNull(newState, conf.name + '.create: expect itemid.');
     Arguments.warnNonNull(fn, conf.name + '.create: expect fn.');
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     storeset.create(newState, function(id, entry) {
       cacheset.create(newState, function(id, entry) {
-        //innerset.trigger('added', {entryId: id, entry: entry});
         fn(id, entry);
-      }, function(id, error) {
-        errFn(id, 'cached cacheset error: ' + id + ' .. ' + error);
-      });
-    }, function(id, error) {
-      errFn(id, 'cached cacheset error: ' + id + ' .. ' + error);
-    });
+      }, errFn);
+    }, errFn);
   };
 
   innerset.remove = function(itemId, oldentry, fn, errFn) {
@@ -764,8 +820,8 @@ function CachedDataSet(conf) {
     Arguments.assertNonNull(itemId, conf.name + '.remove: expect itemid.');
     Arguments.warnNonNull(fn, conf.name + '.remove: expect fn.');
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     storeset.remove(itemId, oldentry, function(itemId, item) {
       cacheset.remove(itemId, oldentry, fn, errFn);
@@ -794,7 +850,9 @@ function CachedDataSet(conf) {
  */
 function RESTfulDataSet(conf) {
 
-  var instance = $.extend(this, new SimpleBinder({name: 'pageforest-binder'}));
+  var innerset = new BareSet($.extend({}, conf, {name: conf.name + "-inner"}));
+
+  var instance = new SimpleDataSet($.extend(conf, {innerset: innerset}));
 
   // error check
   if (conf.baseurl === undefined) {
@@ -812,33 +870,40 @@ function RESTfulDataSet(conf) {
     fn(id, item);
   };
 
-  var EMPTY_FN = function() {};
-  var DEFAULT_ERR = function(msg) { console.error(msg); };
-
   var ajaxBrowse = function(fn, errFn, sumFn, filters) {
     if (!fn) {
       console.error('Expect fn parameter.');
       throw 'Expect fn parameter.';
     }
     var searchString = HashSearch.getSearchString(filters) || '';
+    var url = conf.baseurl + '/' + conf.entitytype + searchString;
     $.ajax({
       type: 'GET',
-      url: conf.baseurl + '/' + conf.entitytype + searchString,
+      url: url,
       dataType: 'json',
+      beforeSend: function(xhr) {
+        xhr.withCredentials = true;
+      },
       success: function(raw) {
-        var data = normalize(raw);
-        var list = data.items;
-        for (var j=0, len=list.length; j<len; j++) {
-          try {
+        var count = 0;
+        try {
+          var data = normalize(raw);
+          var list = data.items;
+          for (var j=0, len=list.length; j<len; j++) {
             itemize(fn, list[j]);
-          } catch(e) {
-            console.error('exception invoke: ' + e);
+            count++;
           }
+        } catch(e) {
+          var exception = {datasetname: instance.name, message: e.message, url: url, method: "browse", status: "400", kind: "unknown"};
+          exception.nested = {exception: e};
+          errFn(exception);
         }
+        sumFn(count);
       },
       error: function(request, textStatus, errorThrown) {
-        var exception = {on: 'browse', status: textStatus, setname: instance.name};
-        exception.nested = {request: request, status: textStatus, exception: errorThrown}; 
+        sumFn(0);
+        var exception = {datasetname: instance.name, status: request.status, message: request.statusText, url: url, method: "browse", kind: textStatus};
+        exception.nested = {request: request, status: textStatus, exception: errorThrown};
         errFn(exception);
       },
       async: true
@@ -853,11 +918,14 @@ function RESTfulDataSet(conf) {
           fn(data);
         },
         error: function(request, textStatus, errorThrown) {
-          var exception = {on: 'browse', status: textStatus, setname: instance.name};
-          exception.nested = {request: request, status: textStatus, exception: errorThrown}; 
+          var exception = {datasetname: instance.name, status: request.status, message: request.statusText, url: url, method: options.method, kind: textStatus};
+          exception.nested = {request: request, status: textStatus, exception: errorThrown};
           err(exception);
         },
         dataType: 'json',
+        beforeSend: function(xhr) {
+          xhr.withCredentials = true;
+        },
         async: true,
         entity: {},
         oldentity: {}
@@ -872,32 +940,26 @@ function RESTfulDataSet(conf) {
     $.ajax(ajaxoptions);
   };
 
-  this.name = conf.name;
-
-  this.read = function(id, fn, errFn) {
+  innerset.read = function(id, fn, errFn) {
     Arguments.assertNonNull(id, conf.name + ".read: expect argument 'id'.");
     Arguments.assertNonNull(fn, conf.name + ".read: expect argument 'fn'.");
 
-    errFn = errFn || DEFAULT_ERR;
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
     var ajaxFn = function(data) {
       var id = conf.getId(data);
       fn(id, data);
     };
-    var ajaxErr = function(request, textStatus, errorThrown) {
-      var exception = {on: 'read', id: id, status: textStatus};
-      errFn(exception, {request: request, status: textStatus, exception: errorThrown});
-    };
-    ajaxcommon({type: 'GET', url: url, data: $.toJSON({}), entity: {}}, ajaxFn, ajaxErr);
+    ajaxcommon({type: 'GET', method: "read", url: url, data: $.toJSON({}), entity: {}}, ajaxFn, errFn);
   };
 
-  this.create = function(entity, fn, errFn) {
+  innerset.create = function(entity, fn, errFn) {
     Arguments.assertNonNull(entity, conf.name + ".create: expect argument 'entity'.");
     Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var url = conf.baseurl + '/' + conf.entitytype + '/';
     var data = $.toJSON({entity:entity, oldentity: entity});
@@ -905,14 +967,10 @@ function RESTfulDataSet(conf) {
       var id = conf.getId(data);
       fn(id, data);
     };
-    var ajaxErr = function(request, textStatus, errorThrown) {
-      var exception = {on: 'create', id: id, status: textStatus};
-      errFn(exception, {request: request, status: textStatus, exception: errorThrown});
-    };
-    ajaxcommon({type: 'POST', url: url, data: data, entity: entity}, ajaxFn, ajaxErr);
+    ajaxcommon({type: 'POST', method: "create", url: url, data: data, entity: entity}, ajaxFn, errFn);
   };
 
-  this.update = function(id, entity, oldentity, fn, errFn) {
+  innerset.update = function(id, entity, oldentity, fn, errFn) {
     // adjust arguments if 'oldentry' is not specified
     if (Arguments.isNonNull(oldentity) && $.isFunction(oldentity)) {
       if (Arguments.isNonNull(fn) && $.isFunction(fn)) {
@@ -925,8 +983,8 @@ function RESTfulDataSet(conf) {
     Arguments.assertNonNull(id, conf.name + ".update: expect argument 'entryId'.");
     Arguments.assertNonNull(entity, conf.name + ".update: expect argument 'newentry'.");
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
     var data = $.toJSON({entity:entity, oldentity: oldentity});
@@ -934,14 +992,10 @@ function RESTfulDataSet(conf) {
       var id = conf.getId(data);
       fn(id, data);
     };
-    var ajaxErr = function(request, textStatus, errorThrown) {
-      var exception = {on: 'update', id: id, item: entity, status: textStatus};
-      errFn(exception, {request: request, status: textStatus, exception: errorThrown});
-    };
-    ajaxcommon({type: 'PUT', url: url, data: data}, ajaxFn, ajaxErr);
+    ajaxcommon({type: 'PUT', method: "update", url: url, data: data}, ajaxFn, errFn);
   };
 
-  this.remove = function(id, oldentity, fn, errFn) {
+  innerset.remove = function(id, oldentity, fn, errFn) {
     // adjust arguments if 'oldentry' is not specified
     if (Arguments.isNonNull(oldentity) && $.isFunction(oldentity)) {
       if (Arguments.isNonNull(fn) && $.isFunction(fn)) {
@@ -953,33 +1007,201 @@ function RESTfulDataSet(conf) {
     Arguments.assertNonNull(id, conf.name + ".remove: invalid (null) input.");
     Arguments.warnNonNull(id, conf.name + ".remove: invalid (null) input.");
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
     var ajaxFn = function(data) {
       fn(id, data);
     };
-    var ajaxErr = function(request, textStatus, errorThrown) {
-      var exception = {on: 'remove', id: id, item: oldentity, status: textStatus};
-      errFn(exception, {request: request, status: textStatus, exception: errorThrown});
-    };
-    ajaxcommon({type: 'DELETE', url: url, data: $.toJSON({oldentity: oldentity})}, ajaxFn, ajaxErr);
+    ajaxcommon({type: 'DELETE', method: "remove", url: url, data: $.toJSON({oldentity: oldentity})}, ajaxFn, errFn);
   };
 
-  this.browse = function(fn, errFn, sumFn, filter) {
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+  innerset.browse = function(fn, errFn, sumFn, filter) {
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
-    return ajaxBrowse(fn, errFn, sumFn, filter);
+    ajaxBrowse(fn, errFn, sumFn, filter);
   };
-
-  this.init = function() {};
-
-  this.start = function() {};
 
   return instance;
 } // function RESTfulDataSet()
+
+/**
+ * Similar to RESTFulDataSet, but going thru JSONP
+ *
+ * @author: tyip AT beedesk DOT com
+ */
+function JSONPDataSet(conf) {
+
+  var innerset = new BareSet($.extend({}, conf, {name: conf.name + "-inner"}));
+
+  var instance = new SimpleDataSet($.extend(conf, {innerset: innerset}));
+
+  // error check
+  if (conf.baseurl === undefined) {
+    console.error('Parameter "baseurl" is not specified.'); // fatal error
+  }
+  if (conf.entitytype=== undefined) {
+    console.error('Parameter "entitytype" is not specified.'); // fatal error
+  }
+
+  var url = conf.baseurl + '/' + conf.entitytype;
+
+  var normalize = conf.normalize || function(raw) { return raw; };
+  var itemize = conf.itemize || function(fn, item) {
+    var id = conf.getId(item);
+    fn(id, item);
+  };
+
+  var ajaxBrowse = function(fn, errFn, sumFn, filters) {
+    if (!fn) {
+      console.error('Expect fn parameter.');
+      throw 'Expect fn parameter.';
+    }
+    var searchString = HashSearch.getSearchString(filters) || '';
+    $.jsonp({
+      type: "GET",
+      url: url + "?callback=?&method=GET",
+      dataType: "jsonp",
+      success: function(raw) {
+        var count = 0;
+        try {
+          var data = normalize(raw);
+          var list = data.items;
+          for (var j=0, len=list.length; j<len; j++) {
+            itemize(fn, list[j]);
+            count++;
+          }
+        } catch(e) {
+          var exception = {datasetname: instance.name, message: e.message, url: url, method: "browse", status: "400", kind: "unknown"};
+          exception.nested = {exception: e};
+          errFn(exception);
+        }
+        sumFn(count);
+      },
+      error: function() {
+        var exception = {datasetname: instance.name, status: "400", message: "jsonp does not give error detail", url: url, method: "browse", kind: "error"};
+        sumFn(count);
+        errFn(exception);
+      },
+      callback: "callback"
+    });
+  };
+
+  var ajaxcommon = function(options, fn, err) {
+    var ajaxoptions = $.extend({
+      type: "GET",
+      url: url + "?callback=?&method=GET",
+      dataType: "jsonp",
+      success: function(data) {
+        $.extend(ajaxoptions.entity, data.entity);
+        $.extend(ajaxoptions.oldentity, data.oldentity);
+        fn(data);
+      },
+      error: function() {
+        var exception = {datasetname: instance.name, status: "400", message: "jsonp does not give error detail", url: url, method: options.method, kind: "error"};
+        err(exception);
+      },
+      entity: {},
+      oldentity: {}
+    }, options);
+
+    if (ajaxoptions.entity != undefined) {
+      delete ajaxoptions.entity;
+    }
+    if (ajaxoptions.oldentity != undefined) {
+      delete ajaxoptions.oldentity;
+    }
+    $.ajax(ajaxoptions);
+  };
+
+  innerset.read = function(id, fn, errFn) {
+    Arguments.assertNonNull(id, conf.name + ".read: expect argument 'id'.");
+    Arguments.assertNonNull(fn, conf.name + ".read: expect argument 'fn'.");
+
+    errFn = CRUDs.getCheckedErrorFn(errFn);
+
+    var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
+    var ajaxFn = function(data) {
+      var id = conf.getId(data);
+      fn(id, data);
+    };
+    ajaxcommon({type: 'GET', method: "read", url: url, data: $.toJSON({}), entity: {}}, ajaxFn, errFn);
+  };
+
+  innerset.create = function(entity, fn, errFn) {
+    Arguments.assertNonNull(entity, conf.name + ".create: expect argument 'entity'.");
+    Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
+
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
+
+    var url = conf.baseurl + '/' + conf.entitytype + '/';
+    var data = $.toJSON({entity:entity, oldentity: entity});
+    var ajaxFn = function(data) {
+      var id = conf.getId(data);
+      fn(id, data);
+    };
+    ajaxcommon({type: 'POST', method: "create", url: url, data: data, entity: entity}, ajaxFn, errFn);
+  };
+
+  innerset.update = function(id, entity, oldentity, fn, errFn) {
+    // adjust arguments if 'oldentry' is not specified
+    if (Arguments.isNonNull(oldentity) && $.isFunction(oldentity)) {
+      if (Arguments.isNonNull(fn) && $.isFunction(fn)) {
+        errFn = fn;
+      }
+      fn = oldentity;
+      oldentity = undefined;
+    }
+
+    Arguments.assertNonNull(id, conf.name + ".update: expect argument 'entryId'.");
+    Arguments.assertNonNull(entity, conf.name + ".update: expect argument 'newentry'.");
+
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
+
+    var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
+    var data = $.toJSON({entity:entity, oldentity: oldentity});
+    var ajaxFn = function(data) {
+      var id = conf.getId(data);
+      fn(id, data);
+    };
+    ajaxcommon({type: 'PUT', method: "update", url: url, data: data}, ajaxFn, errFn);
+  };
+
+  innerset.remove = function(id, oldentity, fn, errFn) {
+    // adjust arguments if 'oldentry' is not specified
+    if (Arguments.isNonNull(oldentity) && $.isFunction(oldentity)) {
+      if (Arguments.isNonNull(fn) && $.isFunction(fn)) {
+        errFn = fn;
+      }
+      fn = oldentity;
+      oldentity = undefined;
+    }
+    Arguments.assertNonNull(id, conf.name + ".remove: invalid (null) input.");
+    Arguments.warnNonNull(id, conf.name + ".remove: invalid (null) input.");
+
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
+
+    var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
+    var ajaxFn = function(data) {
+      fn(id, data);
+    };
+    ajaxcommon({type: 'DELETE', method: "remove", url: url, data: $.toJSON({oldentity: oldentity})}, ajaxFn, errFn);
+  };
+
+  innerset.browse = function(fn, errFn, sumFn, filter) {
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
+
+    ajaxBrowse(fn, errFn, sumFn, filter);
+  };
+
+  return instance;
+} // function JSONPDataSet
 
 function AjaxDataSet(conf) {
 
@@ -1017,7 +1239,7 @@ function AjaxDataSet(conf) {
         for (var j=0, len=list.length; j<len; j++) {
           var entry = list[j];
           entries.create(entry, function() {
-            //entries.trigger('added', {entryId: entry.id, entry: entry});  
+            //entries.trigger('added', {entryId: entry.id, entry: entry});
           }, function() {
             console.error("some error adding item.");
           });
@@ -1102,24 +1324,24 @@ function FilteredEntries(conf) {
 
   self.name = myconf.name;
 
-  self.read = function(entryId) { // "read into"
+  self.read = function(entryId, fn, errFn) { // "read into"
     var result;
-    result = upstream.read(entryId);
+    result = upstream.read.apply(this, arguments);
     return result;
   };
-  self.create = function(entry) {
+  self.create = function(entry, fn, errFn) {
     var result;
-    result = upstream.create(entry);
+    result = upstream.create.apply(this, arguments);
     return result;
   };
-  self.update = function(entryId, newentry) {
+  self.update = function(entryId, newentry, fn, errFn) {
     var result;
-    result = upstream.update(entryId, newentry);
+    result = upstream.update.apply(this, arguments);
     return result;
   };
-  self.remove = function(entryId) {
+  self.remove = function(entryId, oldentry, fn, errFn) {
     var result;
-    result = upstream.remove(entryId);
+    result = upstream.remove.apply(this, arguments);
     return result;
   };
   self.removeAll = function() {
@@ -1289,7 +1511,7 @@ function EntityDesc(conf) {
   return conf;
 }
 
-function DatabaseBareSet(conf) {
+function DatabaseDataSet(conf) {
   if (!conf.entity) {
     throw('Parameter "entity" is not specified.'); // fatal error
   }
@@ -1313,9 +1535,6 @@ function DatabaseBareSet(conf) {
   var entity = conf.entity;
   var db = entity.db.open();
 
-  var EMPTY_FN = function() {};
-  var DEFAULT_ERR = function(msg) { console.error(msg); };
-
   var getName = function(item) {
     return item.name;
   };
@@ -1335,7 +1554,9 @@ function DatabaseBareSet(conf) {
   var verifyTable = function() {
     db.transaction(function(tx) {
       tx.executeSql("SELECT COUNT(*) FROM " + entityname, [],
-        function(result) {},
+        function(result) {
+          console.warn("LocalDB table '" + entityname + "' found.");
+        },
         function(tx, error) {
           if (entity.autocreate) {
             var idstring = fieldAndType(entity.id) + ' PRIMARY KEY' + (entity.keygen === 'seq'? ' AUTO INCREMENT' : '');
@@ -1354,16 +1575,20 @@ function DatabaseBareSet(conf) {
     });
   };
 
-  this.name = conf.name;
+  var innerset = new BareSet($.extend({}, conf, {name: conf.name + "-inner"}));
 
-  this.browse = function(fn, err, sumfn, filter) {
+  var instance = new SimpleDataSet($.extend(conf, {innerset: innerset}));
+
+  var url = "localdb://" + conf.entity.db.name + "/" + conf.entity.name + "/";
+
+  innerset.browse = function(fn, errFn, sumFn, filter) {
     // adjust argument
-    if (!Arguments.isNonNullFn(sumfn)) {
-      filter = sumfn;
-      sumfn = null;
+    if (!Arguments.isNonNullFn(sumFn)) {
+      filter = sumFn;
+      sumFn = null;
     }
 
-    sumfn = sumfn || function() {};
+    sumFn = sumFn || function() {};
 
     var cont;
     var idstring = namequote(idfield);
@@ -1397,24 +1622,25 @@ function DatabaseBareSet(conf) {
             if (cont === false)
               break;
           }
-          if (resultset.rows.length == 0) {
-            sumfn(0);
-          }
+          sumFn(resultset.rows.length);
         }, function(tx, error) {
-          console.error('Failed to retrieve [' + entityname + '] from database - ' + uneval(error));
-          sumfn(0);
+          var message = typeof(error) === "string"? error: JSON.stringify(error);
+          var exception = {datasetname: instance.name, status: "400", message: message, url: url, method: "browse", kind: "error"};
+          exception.nested = error;
+          errFn(exception);
+          sumFn(0);
         }
       );
     });
     return cont;
   };
 
-  this.create = function(entity, fn, errFn) {
+  innerset.create = function(entity, fn, errFn) {
     Arguments.assertNonNull(entity, conf.name + '.create: expect entity.');
     Arguments.warnNonNull(fn, conf.name + '.create: expect fn.');
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     db.transaction(function(tx) {
       var effectiveFields;
@@ -1434,16 +1660,19 @@ function DatabaseBareSet(conf) {
       tx.executeSql(sql, values, function(result) {
         fn(id, entity);
       }, function(tx, error) {
-        errFn(id, 'insert error: ' + uneval(error));
+        var message = typeof(error) === "string"? error: JSON.stringify(error);
+        var exception = {datasetname: instance.name, status: "400", message: message, url: url, method: "create", kind: "error"};
+        exception.nested = error;
+        errFn(exception);
       });
     });
   };
 
-  this.read = function(id, fn, errFn) {
+  innerset.read = function(id, fn, errFn) {
     Arguments.assertNonNull(id, conf.name + ".read: expect argument 'entryId'.");
     Arguments.assertNonNull(fn, conf.name + ".read: expect argument 'fn'.");
 
-    errFn = errFn || DEFAULT_ERR;
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var effectiveFields = [];
     effectiveFields.push(idfield);
@@ -1465,12 +1694,15 @@ function DatabaseBareSet(conf) {
           errFn(id, 'no row for id: ' + id);
         }
       }, function(tx, error) {
-        errFn(id, 'select error: ' + uneval(error));
+        var message = typeof(error) === "string"? error: JSON.stringify(error);
+        var exception = {datasetname: instance.name, status: "400", message: message, url: url, method: "create", kind: "error"};
+        exception.nested = error;
+        errFn(exception);
       });
     });
   };
 
-  this.update = function(id, entity, oldentity) {
+  innerset.update = function(id, entity, oldentity, fn, errFn) {
     // adjust arguments if 'oldentry' is not specified
     if (Arguments.isNonNull(entity) && $.isFunction(entity)) {
       if (Arguments.isNonNull(fn) && $.isFunction(fn)) {
@@ -1483,13 +1715,14 @@ function DatabaseBareSet(conf) {
     Arguments.assertNonNull(entry, conf.name + ".update: expect argument 'id'.");
     Arguments.warnNonNull(fn, conf.name + ".update: expect argument 'fn'.");
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
+    errFn("not implemented.");
     throw('not implemented');
   };
 
-  this.remove = function(id, entity, fn, errFn) {
+  innerset.remove = function(id, entity, fn, errFn) {
     // adjust arguments if 'oldentry' is not specified
     if (Arguments.isNonNull(entity) && $.isFunction(entity)) {
       if (Arguments.isNonNull(fn) && $.isFunction(fn)) {
@@ -1502,8 +1735,8 @@ function DatabaseBareSet(conf) {
     Arguments.assertNonNull(id, conf.name + ".remove: expect argument 'id'.");
     Arguments.warnNonNull(fn, conf.name + ".remove: expect argument 'fn'.");
 
-    fn = fn || EMPTY_FN;
-    errFn = errFn || DEFAULT_ERR;
+    fn = CRUDs.getCheckedFn(fn);
+    errFn = CRUDs.getCheckedErrorFn(errFn);
 
     db.transaction(function(tx) {
       var values = [];
@@ -1513,34 +1746,17 @@ function DatabaseBareSet(conf) {
       tx.executeSql(sql, values, function(result) {
         fn(values[0], null); //@TODO
       }, function(tx, error) {
-        errFn(values[0], 'delete error: ' + uneval(error));
+        var message = typeof(error) === "string"? error: JSON.stringify(error);
+        var exception = {datasetname: instance.name, status: "400", message: message, url: url, method: "create", kind: "error"};
+        exception.nested = error;
+        errFn(exception);
       });
     });
   };
-  this.init = function() {
+
+  innerset.init = function() {
     verifyTable();
   };
-  this.start = function() {
-  };
+
+  return instance;
 };
-
-function CachedDatabaseEntityDataSet(conf) {
-  var entries = new CachedDataSet($.extend(conf, {storeset: storeset}));
-
-  var oldinit = entries.init;
-  entries.init = function() {
-    verifyTable();
-    oldinit();
-  };
-
-  var oldstart = entries.start;
-  entries.start = function() {
-    oldstart();
-  };
-
-  entries.getErrorHandler = function() {
-    return errorHandler;
-  };
-  return entries;
-};
-
