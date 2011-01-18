@@ -178,13 +178,13 @@ var HashSearch = new function() {
   this.getSearchString = function(search) {
     var result = '';
     for (var item in search) {
-        if (result.length === 0) {
+        if (result.length !== 0) {
             result += '&';
         }
         result += item + '=' + encodeURIComponent(search[item]);
     }
-    if (result.legnth > 0) {
-        result += '?';
+    if (result.length > 0) {
+        result = '?' + result;
     }
     return result;
   };
@@ -391,6 +391,19 @@ var Arguments = new function() {
   };
   this.assertNonNullFn = function(arg, message) {
     if (!instance.isNonNullFn(arg)) {
+      console.warn(message || 'Parameter is null');
+    }
+  };
+  this.isNonNullDataObject = function(arg) {
+    return (arg !== undefined && arg !== null && !$.isFunction(arg) && arg.prototype === undefined);
+  };
+  this.assertNonNullDataObject = function(arg, message) {
+    if (!instance.isNonNullDataObject(arg)) {
+      throw(message || 'Parameter is null');
+    }
+  };
+  this.assertNonNullDataObject = function(arg, message) {
+    if (!instance.isNonNullDataObject(arg)) {
       console.warn(message || 'Parameter is null');
     }
   };
