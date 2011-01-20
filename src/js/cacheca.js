@@ -704,7 +704,6 @@ function CachedDataSet(conf) {
       storeset.browse(function(id, item) { // this query have all item modified since
         cacheset.read(id, function() {}, function(id) { // make sure cache does *not* have it.
           storeset.read(id, function(id, item) {
-            console.log('[read from pf] id: ' + id + '--' + uneval(item));
             cacheset.create(item, function(id, item) { // create item
               fullset.trigger('added', {entryId: id, entry: item});
             });
@@ -1082,7 +1081,7 @@ function JSONPDataSet(conf) {
       },
       error: function() {
         var exception = {datasetname: instance.name, status: "400", message: "jsonp does not give error detail", url: url, method: "browse", kind: "error"};
-        sumFn(count);
+        sumFn(0);
         errFn(exception);
       },
       callback: "callback"
@@ -1655,8 +1654,6 @@ function DatabaseDataSet(conf) {
       var id = entity[idfield];
       var sql = "INSERT INTO " + namequote(entityname) + " ( " + Strings.join(", ", Arrays.apply(namequote, effectiveFields))
           + " ) VALUES ( " + Strings.join(', ', Strings.fill('?', (effectiveFields.length))) + " )";
-      console.log('sql: ' + sql + ' values: ' + uneval(values) + ' fields: ' + uneval(colfields));
-      console.log('entity: ' + uneval(entity));
       tx.executeSql(sql, values, function(result) {
         fn(id, entity);
       }, function(tx, error) {
