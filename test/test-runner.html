@@ -1,0 +1,37 @@
+<html>
+<head>
+<title>Cacheca Unit Tests</title>
+<link rel="stylesheet" type="text/css" href="/lib/beta/css/client.css" />
+<script type="text/javascript"
+        src="http://ajax.googleapis.com/ajax/libs/jquery/1.4/jquery.min.js"></script>
+<script type="text/javascript" src="/lib/beta/js/utils.js"></script>
+<script type="text/javascript" src="/static/src/js/timer.js"></script>
+<script type="text/javascript" src="/static/src/js/unit.js"></script>
+<script type="text/javascript" src="/src/js/utilities.js"></script>
+<script type="text/javascript" src="/src/js/cacheca.js"></script>
+<script type="text/javascript" src="test-cacheca.js"></script>
+</head>
+
+<body onload="run();">
+<h1 id="title"><script>document.write(document.title);</script></h1>
+
+<script>
+var cachecaTest = namespace.lookup('com.beedesk.cacheca.test');
+var unit = namespace.lookup('org.startpad.unit');
+
+ namespace.lookup('com.beedesk.cacheca').define(function(ns) {
+   ns.extend({
+     "BareSet": BareSet, 
+     "Binder": Binder
+   }); 
+ });
+
+function run() {
+    unit.runTests([cachecaTest]);
+}
+</script>
+
+<div id="divUnit" style="font-family: Courier;"></div>
+
+</body>
+</html>
