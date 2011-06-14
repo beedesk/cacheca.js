@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, BeeDesk, Inc., unless otherwise noted.
+ * Copyright (c) 2010 - 2011, BeeDesk, Inc., unless otherwise noted.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -171,7 +171,148 @@ var Dates = new function() {
       return dt;
   };
   // </Mike Koss>
+
+  this.isPast = function(datetime) {
+    var result = false;
+    var date = new Date(datetime);
+    var now = new Date();
+    if (date >= now) {
+      result = true;
+    }
+    return result;
+  };
+  this.isRecent = function(datetime) {
+    var result = false;
+    var date = Date.parseExact(datetime, "yyyy-MM-ddTHH:mm:ss");
+    if (!!date) {
+      var past = new Date().add(-2).hour();
+      var soon = new Date().add(+2).hour();
+      if (date.between(past, soon)) {
+        result = true;
+      }
+    } else {
+      console.error("date: [" + datetime + "] typeof: [" + typeof(datitem) + "]");
+    }
+    return result;
+  };
+  this.getReadableInterval = function(datetime) {
+    throw "Not implemented";
+  };
   return this;
+};
+
+var Threads = new function() {
+  /**
+   * A utility to make it easy to perform an action conditioning
+   * on all async calls' results ready
+   *
+   * Usage:
+   * var river = Thread.river();
+   * river.join(
+   *   async1(param1, trunk.branch("entry")),
+   *   async1(param2, trunk.branch("group")),
+   *   function(joined) {
+   *     var entry = joined.entry[1];
+   *     var group = joined.group[1];
+   *   }
+   * );
+   */
+  this.river = function() {
+    var result = new function() {
+      var instance = this;
+      var names = {};
+      var args = {};
+      var size = 0;
+      var count = 0;
+      var fun;
+
+      this.branch = function(name) {
+        if (names[name] !== undefined) {
+          throw "Duplicated name";
+        } else {
+          names[name] = name;
+        }
+
+        var pos = size++;
+        var method = function(list) {
+          if (args[name] === undefined) {
+            count++;
+            args[name] = Array.prototype.slice.call(arguments);
+            if (count === size) {
+              if (!!fun) {
+                fun.apply(this, [args]);
+              }
+            }
+          } else {
+            console.error("Duplicated call.");
+          }
+        };
+        return method;
+      };
+      this.join = function(oneormorebranches, fn) {
+        console.warn("[river] join() " + arguments.length + " expected call: " + size + " called: " + count);
+        fun = arguments[arguments.length - 1];
+        Arguments.assertNonNullFn(fun);
+
+        // join might be called at last, if calls to branches are synchronous
+        if (count === size) {
+          fun.apply(this, [args]);
+        }
+      };
+    };
+    return result;
+  };
+
+  this.latchbinder = function() {
+    var result = new function() {
+      var instance = this;
+      var caller, args;
+      var queue = [];
+      this.latch = function() {
+        if (!caller) {
+          caller = this;
+          args = Array.prototype.slice.call(arguments);
+          for (var i=0,len=queue.length; i<len; i++) {
+            queue[i].apply(caller, args);
+          }
+          queue = null;
+        }
+      };
+      this.bind = function(fn) {
+        if (caller) {
+          fn.apply(caller, args);
+        } else {
+          queue.push(fn);
+        }
+      };
+    }
+    return result;
+  };
+};
+
+var Finds = new function() {
+  this.match = function(entry, filters) {
+    var result = false;
+    if (!$.isFunction(filters)) {
+      var matchAll = true;
+      var matchSome = false;
+      for (var key in filters) {
+        if (entry === undefined) {
+          // problematic
+          matchAll = false;
+          break;
+        } else if (filters[key] !== entry[key]) {
+          matchAll = false;
+          break;
+        }
+        matchSome = true; // make sure filter is non-empty
+      }
+      result = matchSome && matchAll;
+    } else {
+      result = filters(entry);
+    }
+    return result;
+  };
 };
 
 var HashSearch = new function() {
@@ -206,11 +347,12 @@ var HashSearch = new function() {
 };
 
 var Strings = new function() {
+  this.has = function(string, fullname) {
+    new RegExp('(^|\\s)' + fullname + '(\\s|$)').test(string);
+  };
   this.join = function(delim, strs) {
-      if (strs.length == 0)
+      if (strs.length === 0)
           return '';
-      if (strs.length == 1)
-          return strs[0];
 
       var result = strs[0];
       for (var i=1, len=strs.length; i<len; i++) {
@@ -241,6 +383,9 @@ var Strings = new function() {
   this.trim = function(str) {
     return str.replace(/^\s+|\s+$/, '');
   };
+  this.startsWith = function(str, prefix) {
+    return str.indexOf(prefix) === 0;
+  }
   return this;
 };
 
@@ -264,10 +409,134 @@ var Hashs = new function() {
     }
     return result;
   };
+  this.isEmpty = function(obj) {
+    var result = true;
+    if (!!obj) {
+      for (var name in obj) {
+        result = false;
+        break;
+      }
+    }
+    return result;
+  };
+  this.simplify = function(formarray) {
+    var result = {};
+    for (var i=0, len=formarray.length; i<len; i++) {
+      result[formarray[i].name] = formarray[i].value;
+    }
+    return result;
+  };
+
+  // <isEquals>
+  // http://www.pageforest.com/lib/beta/js/pf-client.js : namespace.lookup('org.startpad.base')
+  function generalType(o) {
+    var t = typeof(o);
+    if (t != 'object') {
+        return t;
+    }
+    if (o instanceof String) {
+        return 'string';
+    }
+    if (o instanceof Number) {
+        return 'number';
+    }
+    return t;
+  }
+
+  function keys(map) {
+    var list = [];
+
+    for (var prop in map) {
+        if (map.hasOwnProperty(prop)) {
+            list.push(prop);
+        }
+    }
+    return list;
+  }
+
+  /* Sort elements and remove duplicates from array (modified in place) */
+  function uniqueArray(a) {
+    if (!(a instanceof Array)) {
+        return;
+    }
+    a.sort();
+    for (var i = 1; i < a.length; i++) {
+      if (a[i - 1] == a[i]) {
+          a.splice(i, 1);
+      }
+    }
+  }
+
+  //Perform a deep comparison to check if two objects are equal.
+  //Inspired by Underscore.js 1.1.0 - some semantics modifed.
+  //Undefined properties are treated the same as un-set properties
+  //in both Arrays and Objects.
+  //Note that two objects with the same OWN properties can be equal
+  //if they have different prototype chains (and inherited values).
+  this.isEquals = function isEqual(a, b) {
+    if (a === b) {
+        return true;
+    }
+    if (generalType(a) != generalType(b)) {
+        return false;
+    }
+    if (a == b) {
+        return true;
+    }
+    if (typeof a != 'object') {
+        return false;
+    }
+    // null != {}
+    if (a instanceof Object != b instanceof Object) {
+        return false;
+    }
+
+    if (a instanceof Date || b instanceof Date) {
+        if (a instanceof Date != b instanceof Date ||
+            a.getTime() != b.getTime()) {
+            return false;
+        }
+    }
+
+    var allKeys = [].concat(keys(a), keys(b));
+    uniqueArray(allKeys);
+
+    for (var i = 0; i < allKeys.length; i++) {
+        var prop = allKeys[i];
+        if (!isEqual(a[prop], b[prop])) {
+            return false;
+        }
+    }
+    return true;
+  }
+  // </isEquals>
+
   return this;
 };
 
+var NameArrays = new function() {
+  var instance = this;
+  this.path = function(node, zeroormore) {
+    var result;
+    if (arguments.length === 1) {
+      result = node;
+    } else if (node.children !== undefined && node.children.length > 0){
+      var pathname = arguments[1];
+      for (var i=0, len=node.children.length; i<len; i++) {
+        if (node.children[i].name === pathname) {
+          var args = Array.prototype.slice.call(arguments);
+          args.splice(0, 2, node.children[i]);
+          result = instance.path.apply(this, args);
+          break;
+        }
+      }
+    }
+    return result;
+  };
+};
+
 var Arrays = new function() {
+  var instance = this;
   this.apply = function(fn, items) {
     var result = [];
     for (var i = 0; i < items.length; ++i) {
@@ -287,30 +556,35 @@ var Arrays = new function() {
     }
     return result;
   };
-  this.keys = function(hash) {
-    for (var key in hash) {
-      this.push(key);
+  this.order = function(array) {
+    var result = {};
+    for (var i=array.length-1; i >= 0; i--) {
+      result[array] = i;
     }
-    return this;
+    return result;
+  };
+  this.keys = function(hash) {
+    var result = [];
+    for (var key in hash) {
+      result.push(key);
+    }
+    return result;
   };
   this.intersect = function(ths, that, sorted) {
     // intersect 2 arrays and return 3 (left, middle, right) where the middle is
     // the intersect, left is left-only, etc.
     var ai=0, bi=0;
-    var result = new Object();
-    if (ths === undefined || ths === undefined) {
+    var result = {left: [], middle: [], right: []};
+    if (ths === undefined || ths === null) {
       ths = [];
     }
-    if (that === undefined || that === undefined) {
+    if (that === undefined || that === null) {
       that = [];
     }
     if (sorted !== true) {
       ths.sort();
       that.sort();
     }
-    result.left = new Array();
-    result.middle = new Array();
-    result.right = new Array();
 
     while(ai < ths.length || bi < that.length ) {
       if (bi >= that.length) {
@@ -342,13 +616,13 @@ var Arrays = new function() {
   this.clone = function(array) {
     return array.slice(0);
   };
-  this.arrayremove = function(from, to) {
+  this.remove = function(array, from, to) {
     //Array Remove - By John Resig (MIT Licensed)
-    var rest = this.slice((to || from) + 1 || this.length);
-    this.length = from < 0 ? this.length + from : from;
-    return this.push.apply(this, rest);
+    var rest = array.slice((to || from) + 1 || array.length);
+    array.length = from < 0 ? array.length + from : from;
+    return array.push.apply(array, rest);
   };
-  return this;
+  return instance;
 };
 
 var Arguments = new function() {
@@ -389,7 +663,7 @@ var Arguments = new function() {
       throw(message || 'Parameter is null');
     }
   };
-  this.assertNonNullFn = function(arg, message) {
+  this.warnNonNullFn = function(arg, message) {
     if (!instance.isNonNullFn(arg)) {
       console.warn(message || 'Parameter is null');
     }
@@ -402,7 +676,7 @@ var Arguments = new function() {
       throw(message || 'Parameter is null');
     }
   };
-  this.assertNonNullDataObject = function(arg, message) {
+  this.warnNonNullDataObject = function(arg, message) {
     if (!instance.isNonNullDataObject(arg)) {
       console.warn(message || 'Parameter is null');
     }

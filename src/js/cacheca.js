@@ -267,7 +267,7 @@ function SimpleBareSet(conf) {
   };
 
   this.create = function(entry, fn, errFn) {
-    Arguments.assertNonNull(entry, conf.name + ".create: expect argument 'entry'.");
+    Arguments.assertNonNull(entry, conf.name + "(SimpleBareSet).create: expect argument 'entry'.");
     Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
 
     fn = CRUDs.getCheckedFn(fn);
@@ -477,6 +477,13 @@ function SimpleDataSet(conf) {
     if (!!innerset.start) {
       innerset.start();
     }
+    entries.browse(function(id, item) {
+      entries.read(id, function(id, item) {
+        entries.trigger('added', {entryId: id, entry: item});
+      });
+    }, function(exception) {
+      entries.trigger("error", exception);
+    });
     started = true;
   };
 
@@ -494,7 +501,7 @@ function SimpleDataSet(conf) {
   };
 
   entries.create = function(entry, fn, errFn) {
-    Arguments.assertNonNull(entry, conf.name + ".create: expect argument 'entry'.");
+    Arguments.assertNonNull(entry, conf.name + "(SimpleDataSet).create: expect argument 'entry'.");
     Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
 
     fn = CRUDs.getCheckedFn(fn);
@@ -564,6 +571,7 @@ function SimpleDataSet(conf) {
 
   entries.browse = function(fn, err, sumFn, filters) {
     var myErrFn = getMyErrFn(err);
+    sumFn = !!sumFn? sumFn: function() {}; 
 
     innerset.browse(fn, myErrFn, sumFn, filters);
   };
@@ -698,7 +706,9 @@ function CachedDataSet(conf) {
     var merge = function(since) {
       var opt;
       if (!!since) {
-        opt = {namedquery: 'modified-since', params: {since: since}};
+        // @TODO since: is not working
+        //opt = {namedquery: 'modified-since', params: {since: since}};
+        //opt = {namedquery: 'modified-since'};
       }
       console.log('merge() called');
       storeset.browse(function(id, item) { // this query have all item modified since
@@ -744,7 +754,7 @@ function CachedDataSet(conf) {
     internalerr,
     function(count) {
       if (count === 0) {
-        var zerodate = "1970-1-1T00:00:00.0000Z";
+        var zerodate = "1970-01-01T00:00:00.0000Z";
         merge(zerodate);
       }
     }, {namedquery: 'last-modified'});
@@ -864,10 +874,47 @@ function RESTfulDataSet(conf) {
   var url = conf.baseurl + '/' + conf.entitytype;
 
   var normalize = conf.normalize || function(raw) { return raw; };
-  var itemize = conf.itemize || function(fn, item) {
-    var id = conf.getId(item);
-    fn(id, item);
+
+  var rectangular = function(data, fn) {
+    var list = data.items;
+    for (var j=0, len=list.length; j<len; j++) {
+      var item = list[j];
+      var id = conf.getId(item);
+      fn(id, item);
+    }
   };
+  var idkeyed = function(data, fn) {
+    var list = data.items;
+    for (var id in list) {
+      var item = list[id];
+      fn(id, item);
+    }
+  }; 
+  var idkeyedordered = function(data, fn) {
+    for (var i=0, len=data.order.length; i<len; i++) {
+      try {
+        var id = data.order[i];
+        var item = data.items[id];
+        fn(id, item);
+      } catch(e) {
+        console.error('exception invoke: ' + e);
+      }
+    }
+  };
+  var itemize;
+  if (!!conf.itemize) {
+    if (Arguments.isNonNullFn(conf.itemize)) {
+      itemize = conf.itemize;
+    } else if (conf.itemize === "idkeyed") {
+      itemize = idkeyed;
+    } else if (conf.itemize === "idkeyedordred") {
+      itemize = idkeyedordered;
+    } else if (conf.itemize === "rectangular") {
+      itemize = rectangular;
+    }
+  } else {
+    itemize = idkeyed;
+  }
 
   var ajaxBrowse = function(fn, errFn, sumFn, filters) {
     if (!fn) {
@@ -887,11 +934,10 @@ function RESTfulDataSet(conf) {
         var count = 0;
         try {
           var data = normalize(raw);
-          var list = data.items;
-          for (var j=0, len=list.length; j<len; j++) {
-            itemize(fn, list[j]);
+          itemize(data, function(id, item) {
+            fn(id, item);
             count++;
-          }
+          });
         } catch(e) {
           var exception = {datasetname: instance.name, message: e.message, url: url, method: "browse", status: "400", kind: "unknown"};
           exception.nested = {exception: e};
@@ -950,18 +996,18 @@ function RESTfulDataSet(conf) {
       var id = conf.getId(data);
       fn(id, data);
     };
-    ajaxcommon({type: 'GET', method: "read", url: url, data: $.toJSON({}), entity: {}}, ajaxFn, errFn);
+    ajaxcommon({type: 'GET', method: "read", url: url, data: JSON.stringify({}), entity: {}}, ajaxFn, errFn);
   };
 
   innerset.create = function(entity, fn, errFn) {
-    Arguments.assertNonNull(entity, conf.name + ".create: expect argument 'entity'.");
+    Arguments.assertNonNull(entity, conf.name + "(RESTFulDataSet).create: expect argument 'entity'.");
     Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
 
     fn = CRUDs.getCheckedFn(fn);
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var url = conf.baseurl + '/' + conf.entitytype + '/';
-    var data = $.toJSON({entity:entity, oldentity: entity});
+    var data = JSON.stringify({entity:entity, oldentity: entity});
     var ajaxFn = function(data) {
       var id = conf.getId(data);
       fn(id, data);
@@ -986,7 +1032,7 @@ function RESTfulDataSet(conf) {
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
-    var data = $.toJSON({entity:entity, oldentity: oldentity});
+    var data = JSON.stringify({entity:entity, oldentity: oldentity});
     var ajaxFn = function(data) {
       var id = conf.getId(data);
       fn(id, data);
@@ -1013,7 +1059,7 @@ function RESTfulDataSet(conf) {
     var ajaxFn = function(data) {
       fn(id, data);
     };
-    ajaxcommon({type: 'DELETE', method: "remove", url: url, data: $.toJSON({oldentity: oldentity})}, ajaxFn, errFn);
+    ajaxcommon({type: 'DELETE', method: "remove", url: url, data: JSON.stringify({oldentity: oldentity})}, ajaxFn, errFn);
   };
 
   innerset.browse = function(fn, errFn, sumFn, filter) {
@@ -1048,10 +1094,47 @@ function JSONPDataSet(conf) {
   var url = conf.baseurl + '/' + conf.entitytype;
 
   var normalize = conf.normalize || function(raw) { return raw; };
-  var itemize = conf.itemize || function(fn, item) {
-    var id = conf.getId(item);
-    fn(id, item);
+
+  var rectangular = function(data, fn) {
+    var list = data.items;
+    for (var j=0, len=list.length; j<len; j++) {
+      var item = list[j];
+      var id = conf.getId(item);
+      fn(id, item);
+    }
   };
+  var idkeyed = function(data, fn) {
+    var list = data.items;
+    for (var id in list) {
+      var item = list[id];
+      fn(id, item);
+    }
+  }; 
+  var idkeyedordered = function(data, fn) {
+    for (var i=0, len=data.order.length; i<len; i++) {
+      try {
+        var id = data.order[i];
+        var item = data.items[id];
+        fn(id, item);
+      } catch(e) {
+        console.error('exception invoke: ' + e);
+      }
+    }
+  };
+  var itemize;
+  if (!!conf.itemize) {
+    if (Arguments.isNonNullFn(conf.itemize)) {
+      itemize = conf.itemize;
+    } else if (conf.itemize === "idkeyed") {
+      itemize = idkeyed;
+    } else if (conf.itemize === "idkeyedordred") {
+      itemize = idkeyedordered;
+    } else if (conf.itemize === "rectangular") {
+      itemize = rectangular
+    }
+  } else {
+    itemize = idkeyed;
+  }
 
   var ajaxBrowse = function(fn, errFn, sumFn, filters) {
     if (!fn) {
@@ -1067,11 +1150,10 @@ function JSONPDataSet(conf) {
         var count = 0;
         try {
           var data = normalize(raw);
-          var list = data.items;
-          for (var j=0, len=list.length; j<len; j++) {
-            itemize(fn, list[j]);
+          itemize(data, function(id, item) {
+            fn(id, item);
             count++;
-          }
+          });
         } catch(e) {
           var exception = {datasetname: instance.name, message: e.message, url: url, method: "browse", status: "400", kind: "unknown"};
           exception.nested = {exception: e};
@@ -1126,18 +1208,18 @@ function JSONPDataSet(conf) {
       var id = conf.getId(data);
       fn(id, data);
     };
-    ajaxcommon({type: 'GET', method: "read", url: url, data: $.toJSON({}), entity: {}}, ajaxFn, errFn);
+    ajaxcommon({type: 'GET', method: "read", url: url, data: JSON.stringify({}), entity: {}}, ajaxFn, errFn);
   };
 
   innerset.create = function(entity, fn, errFn) {
-    Arguments.assertNonNull(entity, conf.name + ".create: expect argument 'entity'.");
+    Arguments.assertNonNull(entity, conf.name + "(JSONPDataSet).create: expect argument 'entity'.");
     Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
 
     fn = CRUDs.getCheckedFn(fn);
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var url = conf.baseurl + '/' + conf.entitytype + '/';
-    var data = $.toJSON({entity:entity, oldentity: entity});
+    var data = JSON.stringify({entity:entity, oldentity: entity});
     var ajaxFn = function(data) {
       var id = conf.getId(data);
       fn(id, data);
@@ -1162,7 +1244,7 @@ function JSONPDataSet(conf) {
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
-    var data = $.toJSON({entity:entity, oldentity: oldentity});
+    var data = JSON.stringify({entity:entity, oldentity: oldentity});
     var ajaxFn = function(data) {
       var id = conf.getId(data);
       fn(id, data);
@@ -1189,7 +1271,7 @@ function JSONPDataSet(conf) {
     var ajaxFn = function(data) {
       fn(id, data);
     };
-    ajaxcommon({type: 'DELETE', method: "remove", url: url, data: $.toJSON({oldentity: oldentity})}, ajaxFn, errFn);
+    ajaxcommon({type: 'DELETE', method: "remove", url: url, data: JSON.stringify({oldentity: oldentity})}, ajaxFn, errFn);
   };
 
   innerset.browse = function(fn, errFn, sumFn, filter) {
@@ -1709,7 +1791,7 @@ function DatabaseDataSet(conf) {
       entity = undefined;
     }
 
-    Arguments.assertNonNull(entry, conf.name + ".update: expect argument 'id'.");
+    Arguments.assertNonNull(entity, conf.name + ".update: expect argument 'entity'.");
     Arguments.warnNonNull(fn, conf.name + ".update: expect argument 'fn'.");
 
     fn = CRUDs.getCheckedFn(fn);
