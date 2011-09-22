@@ -171,23 +171,56 @@
         equal(browsed, 1, "Except objects.");
         equal(!!browsedItem.name && browsedItem.name, "testC", "Except specific object.");
         equal(browsedId, testCId, "Except specific id.");
-
       }
 
-      test("Setup SimpleDataSet", function() {
-        var name = "FirstSet"; 
+      test("SimpleDataSet", function() {
+        var name = "MySimpleDataSet"; 
         var ds = new SimpleDataSet({
          name: name
         });
         testAPIDeclarations(name, ds);
         
         // testInitEvents(ds);
+        // !! to enable testInitEvents(ds), remove init() and start()
         ds.init();
         ds.start();
-        //
+        // !!
         
         testCRUDEvents(ds);
-      });      
+      });
+      
+      test("HTML5 DatabaseDataSet", function() {
+        var name = 'localdatabase-entity';
+        var db = new DatabaseDesc({
+          name: 'MyLocalDatabase'
+        });
+        var item = new EntityDesc({
+          db: db,
+          fields: [
+            {name: 'name', type: 'TEXT'}, 
+            {name: 'displayname', type: 'TEXT'},
+            {name: 'username', type: 'TEXT'},
+            {name: 'hash', type: 'TEXT', hash: true, visible: false},
+            {name: 'modified', type: 'TEXT', timestamp: true, visible: false}
+          ],
+          id: {name: 'id', type: 'TEXT'},
+          name: 'entity'
+        });
+        var ds = new DatabaseDataSet({
+          entity: item,
+          name: name
+        });
+        
+        testAPIDeclarations(name, ds);
+
+        // testInitEvents(ds);
+        // !! to enable testInitEvents(ds), remove init() and start()
+        ds.init();
+        ds.start();
+        // !!
+        
+        testCRUDEvents(ds);
+      });
     });
     </script>
   </head>
