@@ -67,7 +67,7 @@
         var removedCount = new Tools.CallCounter();
         ds.bind("removed", removedCount.trap);
 
-        var testAId, testBId;
+        var testAId, testBId, testCId, testDId;
         
         // create item A
         ds.create({name: "testA"}, function(id, item, opt) {
@@ -82,7 +82,24 @@
         });
         ok(!!testBId, "Expect testBId to be non-null");
         ok(testAId != testBId, "Expect unique Id"); // notEqual() does not work as expected?
-        equal(addedCount.count(), 2, "Except an 'added' event.");
+        equal(addedCount.count(), 2, "Except 'added' events.");
+
+        // create item C
+        ds.create({name: "testC"}, function(id, item, opt) {
+          testCId = id; 
+        });
+        ok(!!testCId, "Expect testCId to be non-null");
+        ok(testCId != testAId, "Expect unique Id"); // notEqual() does not work as expected?
+        ok(testCId != testBId, "Expect unique Id"); // notEqual() does not work as expected?
+        equal(addedCount.count(), 3, "Except 'added' events.");
+
+        // create item D
+        ds.create({name: "testD"}, function(id, item, opt) {
+          testDId = id; 
+        });
+        ok(!!testDId, "Expect testDId to be non-null");
+        ok(testDId != testCId, "Expect unique Id"); // notEqual() does not work as expected?
+        equal(addedCount.count(), 4, "Except 'added' events.");
 
         // remove an random item
         var removed = 0;
@@ -121,6 +138,40 @@
         });
         equal(updated, 2, "Except 'update()' to succeed.");
         equal(updatedCount.count(), 2, "Except 'updated' events.");
+        
+        // try to browse
+        var browsed = 0;
+        ds.browse(function(id, item, opt) {
+          browsed++;
+        });
+        equal(browsed, 3, "Except objects.");
+        
+        // remove C
+        ds.remove(testDId, function(id, item, opt) {
+          removed++; 
+        });
+        browsed = 0;
+        ds.browse(function(id, item, opt) {
+          browsed++;
+        });
+        equal(browsed, 2, "Except objects.");
+
+        ds.remove(testBId, function(id, item, opt) {
+          removed++; 
+        });
+        
+        browsed = 0;
+        var browsedItem;
+        var browsedId;
+        ds.browse(function(id, item, opt) {
+          browsed++;
+          browsedId = id;
+          browsedItem = item;
+        });
+        equal(browsed, 1, "Except objects.");
+        equal(!!browsedItem.name && browsedItem.name, "testC", "Except specific object.");
+        equal(browsedId, testCId, "Except specific id.");
+
       }
 
       test("Setup SimpleDataSet", function() {
@@ -130,28 +181,13 @@
         });
         testAPIDeclarations(name, ds);
         
-        testInitEvents(ds);
+        // testInitEvents(ds);
+        ds.init();
+        ds.start();
+        //
         
         testCRUDEvents(ds);
-      });
-      
-      module("Module A");
-      
-      test("first test within module", function() {
-        ok( true, "all pass" );
-      });
-      
-      test("second test within module", function() {
-        ok( true, "all pass" );
-      });
-      
-      module("Module B");
-      
-      test("some other test", function() {
-        expect(2);
-        equal( true, false, "failing test" );
-        equal( true, true, "passing test" );
-      });
+      });      
     });
     </script>
   </head>
