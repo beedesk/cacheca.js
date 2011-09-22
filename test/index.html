@@ -1,46 +1,166 @@
 <html>
-<head>
-  <script src="http://code.jquery.com/jquery-latest.js"></script>
-  <link rel="stylesheet" href="http://code.jquery.com/qunit/git/qunit.css" type="text/css" media="screen" />
-<script type="text/javascript" src="http://code.jquery.com/qunit/git/qunit.js"></script>
-
-  <script>
-  $(document).ready(function(){
+  <head>
+    <link rel="stylesheet" href="http://code.jquery.com/qunit/git/qunit.css" type="text/css" media="screen" />
     
-test("a basic test example", function() {
-  ok( true, "this test is fine" );
-  var value = "hello";
-  equal( value, "hello", "We expect value to be hello" );
-});
+    <script src="http://code.jquery.com/jquery-latest.js" type="text/javascript" ></script>
+    <script src="http://code.jquery.com/qunit/git/qunit.js" type="text/javascript" ></script>
+    <script src="../src/js/utilities.js" type="text/javascript" ></script>
+    <script src="../src/js/cacheca.js" type="text/javascript" ></script>
 
-module("Module A");
+    <script>
+    var Tools = {
+      CallCounter: function(name) {
+        this.name = name;
+        var count = 0;
+        this.trap = function() {
+          count++;
+        }
+        this.count = function() {
+          return count;
+        }
+        return this;
+      }
+    }
+    $(document).ready(function(){
+      var testAPIDeclarations = function(name, ds) {
+        ok($.isFunction(ds.bind), "Expect bind() to be function");
+        ok($.isFunction(ds.unbind), "Expect unbind() to be function");
+        ok($.isFunction(ds.trigger), "Expect trigger() to be function");
+        
+        same(ds.name, name, "Except name equal to config");
+        ok($.isFunction(ds.read), "Expect read() to be function");
+        ok($.isFunction(ds.update), "Expect update() to be function");
+        ok($.isFunction(ds.create), "Expect create() to be function");
+        ok($.isFunction(ds.remove), "Expect remove() to be function");
+        ok($.isFunction(ds.browse), "Expect browse() to be function");
+        
+        ok($.isFunction(ds.init), "Expect init() to be function");
+        ok($.isFunction(ds.start), "Expect start() to be function");
+      };
+      
+      var testInitEvents = function(ds) {
+        
+        var initCount = new Tools.CallCounter();
+        ds.bind("initialized", initCount.trap);
 
-test("first test within module", function() {
-  ok( true, "all pass" );
-});
+        var startCount = new Tools.CallCounter();
+        ds.bind("started", startCount.trap);
+        
+        ds.init();
+        equal(initCount.count(), 1, "Expect an init event");
+        equal(startCount.count(), 0, "Expect a start event");
+        
+        ds.start();
+        equal(initCount.count(), 1, "Expect an init event");
+        equal(startCount.count(), 1, "Expect a start event");
 
-test("second test within module", function() {
-  ok( true, "all pass" );
-});
+      }
 
-module("Module B");
+      var testCRUDEvents = function(ds) {
+        
+        var addedCount = new Tools.CallCounter();
+        ds.bind("added", addedCount.trap);
 
-test("some other test", function() {
-  expect(2);
-  equal( true, false, "failing test" );
-  equal( true, true, "passing test" );
-});
+        var updatedCount = new Tools.CallCounter();
+        ds.bind("updated", updatedCount.trap);
 
-  });
-  </script>
-  
-</head>
+        var removedCount = new Tools.CallCounter();
+        ds.bind("removed", removedCount.trap);
+
+        var testAId, testBId;
+        
+        // create item A
+        ds.create({name: "testA"}, function(id, item, opt) {
+          testAId = id; 
+        });
+        ok(!!testAId, "Expect testAId to be non-null");
+        equal(addedCount.count(), 1, "Except an 'added' event.");
+
+        // create item B
+        ds.create({name: "testB"}, function(id, item, opt) {
+          testBId = id; 
+        });
+        ok(!!testBId, "Expect testBId to be non-null");
+        ok(testAId != testBId, "Expect unique Id"); // notEqual() does not work as expected?
+        equal(addedCount.count(), 2, "Except an 'added' event.");
+
+        // remove an random item
+        var removed = 0;
+        equal(removedCount.count(), 0, "Except no 'removed' event.");
+        ds.remove("randomid", function(id, item, opt) {
+          removed++; 
+        });
+        equal(removed, 0, "Except 'remove()' not to succeed.");
+        equal(removedCount.count(), 0, "Except no 'removed' event.");
+
+        // remove an item we created earlier
+        ds.remove(testAId, function(id, item, opt) {
+          removed++; 
+        });
+        equal(removed, 1, "Except 'remove()' to succeed.");
+        equal(removedCount.count(), 1, "Except an 'removed' event.");        
+
+        // remove it again
+        ds.remove(testAId, function(id, item, opt) {
+          removed++; 
+        });
+        equal(removed, 1, "Except 'remove()' to succeed.");
+        equal(removedCount.count(), 1, "Except an 'removed' event.");        
+
+        // update it
+        var updated = 0;
+        equal(updatedCount.count(), 0, "Except no 'updated' event.");
+        ds.update(testBId, {name: "newTestB"}, function(id, item, opt) {
+          updated++; 
+        });
+        equal(updated, 1, "Except 'update()' to succeed.");
+        equal(updatedCount.count(), 1, "Except an 'updated' event.");        
+
+        ds.update(testBId, {name: "newerTestB"}, function(id, item, opt) {
+          updated++; 
+        });
+        equal(updated, 2, "Except 'update()' to succeed.");
+        equal(updatedCount.count(), 2, "Except 'updated' events.");
+      }
+
+      test("Setup SimpleDataSet", function() {
+        var name = "FirstSet"; 
+        var ds = new SimpleDataSet({
+         name: name
+        });
+        testAPIDeclarations(name, ds);
+        
+        testInitEvents(ds);
+        
+        testCRUDEvents(ds);
+      });
+      
+      module("Module A");
+      
+      test("first test within module", function() {
+        ok( true, "all pass" );
+      });
+      
+      test("second test within module", function() {
+        ok( true, "all pass" );
+      });
+      
+      module("Module B");
+      
+      test("some other test", function() {
+        expect(2);
+        equal( true, false, "failing test" );
+        equal( true, true, "passing test" );
+      });
+    });
+    </script>
+  </head>
   <body>
-    <h1 id="qunit-header">QUnit example</h1>
-   <h2 id="qunit-banner"></h2>
-   <div id="qunit-testrunner-toolbar"></div>
-   <h2 id="qunit-userAgent"></h2>
-   <ol id="qunit-tests"></ol>
-   <div id="qunit-fixture">test markup, will be hidden</div>
+    <h1 id="qunit-header">Cacheca Test</h1>
+    <h2 id="qunit-banner"></h2>
+    <div id="qunit-testrunner-toolbar"></div>
+    <h2 id="qunit-userAgent"></h2>
+    <ol id="qunit-tests"></ol>
+    <div id="qunit-fixture">test markup, will be hidden</div>
   </body>
 </html>
