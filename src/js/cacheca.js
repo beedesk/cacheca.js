@@ -72,7 +72,7 @@ function Binder(conf) {
 
   this.unbind = function(type, fn) {};
 
-  this.trigger = function(type, event) {};
+  this.trigger = function(type, id, item, extra) {};
 
 }
 
@@ -89,7 +89,7 @@ function DataSet(conf) {
   var instance = $.extend(new BareSet(conf), new Binder(conf));
 
   instance.snapbind = function(type, fn) {};
-
+  
   return instance;
 }
 
@@ -174,25 +174,7 @@ function SimpleBareSet(conf) {
       return $.extend({}, entry);
     },
     finder: function(entry, filters) {
-      var result;
-      if (!$.isFunction(filters)) {
-        var matchAll = true;
-        var matchSome = false;
-        for (var key in filters) {
-          if (entry === undefined) {
-            // problematic
-            matchAll = false;
-            break;
-          } else if (filters[key] !== entry[key]) {
-            matchAll = false;
-            break;
-          }
-          matchSome = true; // make sure filter is non-empty
-        }
-        result = matchSome && matchAll;
-      } else {
-        result = filters(entry);
-      }
+      var result = Finds.match(entry, filters);
       return result;
     }
   }, conf);
@@ -247,7 +229,7 @@ function SimpleBareSet(conf) {
 
   this.read = function(entryId, fn, errFn) { // "read into"
     Arguments.assertNonNull(entryId, conf.name + ".read: expect argument 'entryId'.");
-    Arguments.assertNonNull(fn, conf.name + ".read: expect argument 'fn'.");
+    Arguments.assertNonNullFn(fn, conf.name + ".read: expect argument 'fn'.");
 
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
@@ -268,7 +250,9 @@ function SimpleBareSet(conf) {
 
   this.create = function(entry, fn, errFn) {
     Arguments.assertNonNull(entry, conf.name + "(SimpleBareSet).create: expect argument 'entry'.");
-    Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
+    if (DataSets.logwarn) {
+      Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
+    }
 
     fn = CRUDs.getCheckedFn(fn);
     errFn = CRUDs.getCheckedErrorFn(errFn);
@@ -278,7 +262,7 @@ function SimpleBareSet(conf) {
       var content = conf.entryIn(id, entry);
       if (Arguments.isNonNull(content)) {
         entries[id] = content;
-        fn(id, entry);
+        fn(id, entry, fn, errFn);
       } else {
         errFn('failed to convert entry: ' + uneval(entry));
       }
@@ -300,6 +284,13 @@ function SimpleBareSet(conf) {
     Arguments.assertNonNull(entryId, conf.name + ".update: expect argument 'entryId'.");
     Arguments.assertNonNull(newentry, conf.name + ".update: expect argument 'newentry'.");
 
+    if (oldentry === undefined) {
+      var rawentry = entries[entryId];
+      if (!!rawentry) {
+        oldentry = conf.entryOut(entryId, rawentry);
+      }
+    }
+
     fn = CRUDs.getCheckedFn(fn);
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
@@ -309,7 +300,7 @@ function SimpleBareSet(conf) {
       var converted = conf.entryIn(entryId, newentry);
       if (Arguments.isNonNull(converted)) {
         entries[entryId] = converted;
-        fn(entryId, newentry);
+        fn(entryId, newentry, oldentry);
       } else {
         errFn(id, 'problem with conversion: ' + entryId);
       }
@@ -329,7 +320,9 @@ function SimpleBareSet(conf) {
     }
 
     Arguments.assertNonNull(entryId, conf.name + '.remove: expect entryId.');
-    Arguments.warnNonNull(fn, conf.name + '.remove: expect fn.');
+    if (DataSets.logwarn) {
+      Arguments.warnNonNull(fn, conf.name + '.remove: expect fn.');
+    }
 
     fn = CRUDs.getCheckedFn(fn);
     errFn = CRUDs.getCheckedErrorFn(errFn);
@@ -355,9 +348,9 @@ function SimpleBareSet(conf) {
 };
 
 /**
- * SimpleBinder is a simple implementation of Binder which a dispatcher.
+ * SimpleBinder is a simple implementation of Binder.
  * Upon receiving an event (via trigger()), it dispatches it to all
- * handlers.
+ * registered handlers.
  *
  * @param conf
  * @author: tyip AT beedesk DOT com
@@ -365,17 +358,22 @@ function SimpleBareSet(conf) {
 function SimpleBinder(conf) {
   var handlers = new SimpleBareSet(conf);
   this.bind = function(type, fn) {
-    return handlers.create({type: type, fn: fn}, function() {}, function() {});
+    var filter = typeof(type) === "string"?  {type: type}: type;
+    var handler = $.extend({fn: fn}, filter);
+    return handlers.create(handler, function() {}, function() {});
   };
   this.unbind = function(type, fn) {
-    return handlers.remove({type: type, fn: fn}, function() {}, function() {});
+    var filter = typeof(type) === "string"?  {type: type}: type;
+    var handler = $.extend({fn: fn}, filter);
+    return handlers.remove(handler, function() {}, function() {});
   };
-  this.trigger = function(type, list) {
+  this.trigger = function(type, oneormoreparams) {
     var count = 0;
     var contin; // stop propagation
 
     var args = Array.prototype.slice.call(arguments).splice(1);
-    var ids = handlers.find({type: type});
+    var filter = typeof(type) === "string"?  {type: type}: type;
+    var ids = handlers.find(filter);
     for (var j=0, len=ids.length; j < len; j++) {
       handlers.read(ids[j], function(id, handler) {
         count++;
@@ -402,28 +400,6 @@ function SimpleBinder(conf) {
       }
     }
     return count;
-  };
-};
-
-/**
- * Register for dataset
- */
-var Cacheca = new function() {
-  var instance = $.extend(this, new SimpleBinder({name: 'registered-datasets'}));
-  var sets = {};
-  this.register = function(dataset) {
-    var name = !!dataset.name? dataset.name: null;
-    if (!name) {
-      throw "dataset does not has a name";
-    }
-    sets[name] = dataset;
-    instance.trigger('added', name, dataset);
-  };
-  this.list = function() {
-    return $.extend({}, sets);
-  };
-  this.get = function(key) {
-    return sets[key];
   };
 };
 
@@ -479,7 +455,7 @@ function SimpleDataSet(conf) {
     }
     entries.browse(function(id, item) {
       entries.read(id, function(id, item) {
-        entries.trigger('added', {entryId: id, entry: item});
+        entries.trigger('added', id, item, {entryId: id, entry: item});
       });
     }, function(exception) {
       entries.trigger("error", exception);
@@ -493,7 +469,9 @@ function SimpleDataSet(conf) {
 
   entries.read = function(entryId, fn, errFn) {
     Arguments.assertNonNull(entryId, conf.name + ".read: expect argument 'entryId'.");
-    Arguments.assertNonNull(fn, conf.name + ".read: expect argument 'fn'.");
+    if (DataSets.logwarn) {
+      Arguments.warnNonNull(fn, conf.name + ".read: expect argument 'fn'.");
+    }
 
     var myErrFn = getMyErrFn(errFn);
 
@@ -502,7 +480,9 @@ function SimpleDataSet(conf) {
 
   entries.create = function(entry, fn, errFn) {
     Arguments.assertNonNull(entry, conf.name + "(SimpleDataSet).create: expect argument 'entry'.");
-    Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
+    if (DataSets.logwarn) {
+      Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
+    }
 
     fn = CRUDs.getCheckedFn(fn);
     var myErrFn = getMyErrFn(errFn);
@@ -510,7 +490,7 @@ function SimpleDataSet(conf) {
     innerset.create(entry, function(id, item) {
       fn(id, item);
       if (myconf.isEventEnabled()) {
-        entries.trigger('added', {entryId: id, entry: item});
+        entries.trigger('added', id, item, {entryId: id, entry: item});
       }
     }, myErrFn);
   };
@@ -531,15 +511,15 @@ function SimpleDataSet(conf) {
     fn = CRUDs.getCheckedFn(fn);
     var myErrFn = getMyErrFn(errFn);
 
-    innerset.update(entryId, newentry, oldentry, function(id, item) {
-      fn(id, item);
+    innerset.update(entryId, newentry, oldentry, function(id, item, olditem) {
+      fn(id, item, olditem);
       if (myconf.isEventEnabled()) {
-        var event = {entryId: entryId, entry: newentry};
+        var event = {entryId: entryId, entry: newentry, oldentry: olditem};
         if (myconf.useRemovedAdded === true) {
-          entries.trigger('removed', event);
-          entries.trigger('added', event);
+          entries.trigger('removed', entryId, olditem, event);
+          entries.trigger('added', entryId, newentry, event);
         } else {
-          entries.trigger('updated', event);
+          entries.trigger('updated', entryId, newentry, event);
         }
       }
     }, myErrFn);
@@ -556,7 +536,9 @@ function SimpleDataSet(conf) {
     }
 
     Arguments.assertNonNull(entryId, conf.name + '.remove: expect entryId.');
-    Arguments.warnNonNull(fn, conf.name + '.remove: expect fn.');
+    if (DataSets.logwarn) {
+      Arguments.warnNonNull(fn, conf.name + '.remove: expect fn.');
+    }
 
     fn = CRUDs.getCheckedFn(fn);
     var myErrFn = getMyErrFn(errFn);
@@ -564,7 +546,7 @@ function SimpleDataSet(conf) {
     innerset.remove(entryId, oldentry, function(id, item) {
       fn(id, item);
       if (myconf.isEventEnabled()) {
-        entries.trigger('removed', {entryId: id, oldentry: item});
+        entries.trigger('removed', id, item, {entryId: id, oldentry: item});
       }
     }, myErrFn);
   };
@@ -590,9 +572,150 @@ function SimpleDataSet(conf) {
     var result = innerset.removeAll();
     return result;
   };
+  
+  entries.robobind = function(type, fn) {
+    if (started === true) {
+      var args = Array.prototype.slice.call(arguments).splice(1);
+      var filter = typeof(type) === "string"?  {type: type}: type;
+      entries.browse(function(id, item) {
+        var matched = Finds.match(item, filter);
+        if (matched) {
+          fn.apply(this, args);
+        }
+      }, function() {});
+    }
+    entries.bind(type, fn);
+  };
 
   return entries;
 };
+
+/**
+ * Register for dataset
+ */
+var DataSets = $.extend(new SimpleDataSet({
+    name: 'registered-datasets',
+    getId: function(item) {
+      return item.name;
+    },
+    itemize: "rectangular"
+  }), {loglog: false, logwarn: false, logerror: true}
+);
+
+/**
+ * Passthru Set. Decouple ordering of initialization dependnecies. 
+ * For example, between MVC.
+ */
+function PassthruDataSet(conf) {
+
+  var instance = this;
+  var binders = [];
+  var concrete = null;
+
+  var myconf = $.extend({
+  }, conf);
+
+  Arguments.assertNonNull(conf, "Expect 'conf'."); 
+  Arguments.assertNonNull(conf.name, "Expect 'conf.name'."); 
+  
+  this.name = myconf.name;
+
+  this.browse = function(fn, err, sumfn, filters) {
+    concrete.browse.apply(this, arguments);
+  };
+
+  this.find = function(filters) {
+    concrete.find.apply(this, arguments);    
+  };
+
+  this.findOnce = function(filters) {
+    concrete.findOnce.apply(this, arguments);
+  };
+
+  this.read = function(itemId, fn, err) {
+    if (!concrete) {
+      console.error("read undefined");
+    }
+    concrete.read.apply(this, arguments);
+  };
+
+  this.update = function(itemId, newState, oldState, fn, err) {
+    concrete.update.apply(this, arguments);    
+  };
+
+  this.create = function(newState, fn, err) {
+    console.warn("passthru created...");
+    concrete.create.apply(this, arguments);
+  };
+
+  this.remove = function(itemId, fn, err) {
+    concrete.remove.apply(this, arguments);
+  };
+
+  this.trigger = function(type, id, data, extra) {
+    concrete.trigger.apply(this, arguments);
+  };
+
+  this.bind = function(type, fn) {
+    console.warn("[passthru] bind " + myconf.name + ".");
+    if (!!binders) {
+      binders.push({method: "bind", type: type, fn: fn});
+    } else {
+      concrete.bind.apply(this, arguments);
+    }
+  };
+
+  this.robobind = function(type, fn) {
+    console.warn("[passthru] robobind " + myconf.name + ".");
+    if (!!binders) {
+      binders.push({method: "robobind", type: type, fn: fn});
+    } else {
+      concrete.robobind.apply(this, arguments);
+    }
+  };
+
+  this.unbind = function(type, fn) {
+    if (!!binders) {
+      binders.push({method: "unbind", type: type, fn: fn});
+    } else {
+      concrete.unbind.apply(this, arguments);
+    }
+  };
+
+  var playbackhistory = function() {
+    console.warn("[playback] model " + myconf.name + " is added... now playing back history.");
+    for (var i=0, len=binders.length; i<len; i++) {
+      console.warn("[playback] binder (" + i + " of " + len + ")");
+      var bi = binders[i];
+      concrete[bi.method](bi.type, bi.fn);
+    }
+    binders = null;
+  };
+  DataSets.read(myconf.name, function(id, item) {
+    if (item !== null && item !== undefined) {
+      concrete = item;
+      playbackhistory();
+    } else {
+      console.error("Reading null value.");
+    }
+  }, function() {
+    DataSets.bind("added", function(event) {
+      var key = event.entry.name;
+      var dataset = event.entry;
+
+      console.warn("[passthru] adding dataset: " + event.entry.name);
+      var dataset = event.entry;
+      if (concrete === undefined || concrete === null) {
+        if (key === instance.name) {
+          concrete = dataset;
+          playbackhistory();
+          console.warn("[passthru] ... " + event.entry.name);
+        }
+      }
+    });
+  });
+  return instance;
+}
 
 /**
  * CachedDataSet is an simple implementation of DateSet that provides
@@ -643,8 +766,9 @@ function CachedDataSet(conf) {
       console.warn('[cacheset merge] item added to storeset is already exists the cache.');
     }, function(id, item) {
       storeset.read(id, function(id, item) {
+        console.warn("creating, id: " + id + " item: " + uneval(item));
         cacheset.create(item, function(id, item) {
-          fullset.trigger('added', {entryId: id, entry: item});
+          fullset.trigger('added', id, item, {entryId: id, entry: item});
         }, internalerr);
       }, internalerr);
     });
@@ -652,7 +776,7 @@ function CachedDataSet(conf) {
   storeset.bind('removed', function(event) {
     cacheset.read(event.entryId, function(id, item) {
       cacheset.remove(id, function(id, item) {
-        fullset.trigger('removed', {entryId: id, entry: item});
+        fullset.trigger('removed', id, item, {entryId: id, entry: item});
       }, internalerr);
     }, function(exception) {
       console.warn('[cacheset merge] item removed from storeset cannot be found. id: ' + exception.id);
@@ -662,12 +786,12 @@ function CachedDataSet(conf) {
   storeset.bind('updated', function(event) {
     storeset.read(event.entryId, function(id, item) {
       cacheset.read(event.entryId, function(id, item) {
-        cacheset.update(item, function(id, item) {
-          fullset.trigger('update', {entryId: id, entry: item});
+        cacheset.update(item, function(id, item, olditem) {
+          fullset.trigger('update', id, item, {entryId: id, entry: item, oldentry: olditem});
         }, internalerr);
       }, function(id) {
         cacheset.create(item, function(id, item) {
-          fullset.trigger('added', {entryId: id, entry: item});
+          fullset.trigger('added', id, item, {entryId: id, entry: item});
         }, function(id) {
           console.warn('[cacheset merge] update item cannot be added or updated. id: ' + id);
         });
@@ -697,7 +821,7 @@ function CachedDataSet(conf) {
       cacheset.start();
     }
     cacheset.browse(function(id, item) {
-      fullset.trigger('added', {entryId: id, entry: item});
+      fullset.trigger('added', id, item, {entryId: id, entry: item});
     }, internalerr);
     if (!!storeset.start) {
       storeset.start();
@@ -715,7 +839,7 @@ function CachedDataSet(conf) {
         cacheset.read(id, function() {}, function(id) { // make sure cache does *not* have it.
           storeset.read(id, function(id, item) {
             cacheset.create(item, function(id, item) { // create item
-              fullset.trigger('added', {entryId: id, entry: item});
+              fullset.trigger('added', id, item, {entryId: id, entry: item});
             });
           }, internalerr);
         });
@@ -871,12 +995,22 @@ function RESTfulDataSet(conf) {
     console.error('Parameter "entitytype" is not specified.'); // fatal error
   }
 
-  var url = conf.baseurl + '/' + conf.entitytype;
-
-  var normalize = conf.normalize || function(raw) { return raw; };
+  var myconf = $.extend({
+    tokens: function(item) {
+      return [item.id];
+    },
+    normalize: function(data) {
+      return data;
+    },
+    key: 'items',
+    getItems: function(json) {
+      return json[conf.key];
+    },
+    url: conf.baseurl + '/' + conf.entitytype
+  }, conf);
 
   var rectangular = function(data, fn) {
-    var list = data.items;
+    var list = myconf.getItems(data);
     for (var j=0, len=list.length; j<len; j++) {
       var item = list[j];
       var id = conf.getId(item);
@@ -884,7 +1018,7 @@ function RESTfulDataSet(conf) {
     }
   };
   var idkeyed = function(data, fn) {
-    var list = data.items;
+    var list = myconf.getItems(data);
     for (var id in list) {
       var item = list[id];
       fn(id, item);
@@ -902,14 +1036,14 @@ function RESTfulDataSet(conf) {
     }
   };
   var itemize;
-  if (!!conf.itemize) {
-    if (Arguments.isNonNullFn(conf.itemize)) {
+  if (!!myconf.itemize) {
+    if (Arguments.isNonNullFn(myconf.itemize)) {
       itemize = conf.itemize;
-    } else if (conf.itemize === "idkeyed") {
+    } else if (myconf.itemize === "idkeyed") {
       itemize = idkeyed;
-    } else if (conf.itemize === "idkeyedordred") {
+    } else if (myconf.itemize === "idkeyedordred") {
       itemize = idkeyedordered;
-    } else if (conf.itemize === "rectangular") {
+    } else if (myconf.itemize === "rectangular") {
       itemize = rectangular;
     }
   } else {
@@ -922,18 +1056,22 @@ function RESTfulDataSet(conf) {
       throw 'Expect fn parameter.';
     }
     var searchString = HashSearch.getSearchString(filters) || '';
-    var url = conf.baseurl + '/' + conf.entitytype + searchString;
+    var url = myconf.url + '/' + searchString;
     $.ajax({
       type: 'GET',
       url: url,
       dataType: 'json',
+      /*
+      xhrFields: {
+        withCredentials: true
+      },
       beforeSend: function(xhr) {
         xhr.withCredentials = true;
-      },
+      },*/
       success: function(raw) {
         var count = 0;
         try {
-          var data = normalize(raw);
+          var data = myconf.normalize(raw);
           itemize(data, function(id, item) {
             fn(id, item);
             count++;
@@ -958,19 +1096,23 @@ function RESTfulDataSet(conf) {
   var ajaxcommon = function(options, fn, err) {
     var ajaxoptions = $.extend({
         success: function(data) {
-          $.extend(ajaxoptions.entity, data.entity);
-          $.extend(ajaxoptions.oldentity, data.oldentity);
+          $.extend(options.entity, data.entity);
+          $.extend(options.oldentity, data.oldentity);
           fn(data);
         },
         error: function(request, textStatus, errorThrown) {
-          var exception = {datasetname: instance.name, status: request.status, message: request.statusText, url: url, method: options.method, kind: textStatus};
+          var exception = {datasetname: instance.name, status: request.status, message: request.statusText, url: myconf.url, method: options.method, kind: textStatus};
           exception.nested = {request: request, status: textStatus, exception: errorThrown};
           err(exception);
         },
         dataType: 'json',
-        beforeSend: function(xhr) {
-          xhr.withCredentials = true;
+        /*
+        xhrFields: {
+          withCredentials: true
         },
+        beforeSend: function(xhr) { // back-compat with jquery 1.4 and earlier
+          xhr.withCredentials = true;
+        },*/
         async: true,
         entity: {},
         oldentity: {}
@@ -991,7 +1133,7 @@ function RESTfulDataSet(conf) {
 
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
-    var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
+    var url = myconf.url + '/' + encodeURIComponent(id) + '/';
     var ajaxFn = function(data) {
       var id = conf.getId(data);
       fn(id, data);
@@ -1006,7 +1148,7 @@ function RESTfulDataSet(conf) {
     fn = CRUDs.getCheckedFn(fn);
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
-    var url = conf.baseurl + '/' + conf.entitytype + '/';
+    var url = myconf.url + '/';
     var data = JSON.stringify({entity:entity, oldentity: entity});
     var ajaxFn = function(data) {
       var id = conf.getId(data);
@@ -1031,7 +1173,7 @@ function RESTfulDataSet(conf) {
     fn = CRUDs.getCheckedFn(fn);
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
-    var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
+    var url = myconf.url + '/' + encodeURIComponent(id);
     var data = JSON.stringify({entity:entity, oldentity: oldentity});
     var ajaxFn = function(data) {
       var id = conf.getId(data);
@@ -1055,7 +1197,7 @@ function RESTfulDataSet(conf) {
     fn = CRUDs.getCheckedFn(fn);
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
-    var url = conf.baseurl + '/' + conf.entitytype + '/' + id;
+    var url = myconf.url + '/' + encodeURIComponent(id);
     var ajaxFn = function(data) {
       fn(id, data);
     };
@@ -1130,7 +1272,7 @@ function JSONPDataSet(conf) {
     } else if (conf.itemize === "idkeyedordred") {
       itemize = idkeyedordered;
     } else if (conf.itemize === "rectangular") {
-      itemize = rectangular
+      itemize = rectangular;
     }
   } else {
     itemize = idkeyed;
@@ -1146,6 +1288,9 @@ function JSONPDataSet(conf) {
       type: "GET",
       url: url + "?callback=?&method=GET",
       dataType: "jsonp",
+      xhrFields: {
+        withCredentials: true
+      },
       success: function(raw) {
         var count = 0;
         try {
@@ -1179,6 +1324,9 @@ function JSONPDataSet(conf) {
         $.extend(ajaxoptions.entity, data.entity);
         $.extend(ajaxoptions.oldentity, data.oldentity);
         fn(data);
+      },
+      xhrFields: {
+        withCredentials: true
       },
       error: function() {
         var exception = {datasetname: instance.name, status: "400", message: "jsonp does not give error detail", url: url, method: options.method, kind: "error"};
@@ -1297,6 +1445,10 @@ function AjaxDataSet(conf) {
     },
     normalize: function(data) {
       return data;
+    },
+    key: 'items',
+    getItems: function(json) {
+      return json[myconf.key];
     }
   }, conf);
 
@@ -1316,15 +1468,18 @@ function AjaxDataSet(conf) {
       success: function(data) {
         var raw = myconf.normalize(data);
 
-        var list = raw.items;
+        var list = myconf.getItems(raw);
         for (var j=0, len=list.length; j<len; j++) {
           var entry = list[j];
-          entries.create(entry, function() {
-            //entries.trigger('added', {entryId: entry.id, entry: entry});
+          entries.create(entry, function(id, item) {
+            entries.trigger('added', id, item, {entryId: id, entry: item});
           }, function() {
             console.error("some error adding item.");
           });
         }
+      },
+      xhrFields: {
+        withCredentials: true
       },
       error: function(XMLHttpRequest, textStatus, errorThrown) {
         console.error("ajax error '" + XMLHttpRequest.status + "' ajax error '" + " url '" + myconf.url + "'. " + textStatus);
@@ -1374,31 +1529,31 @@ function FilteredEntries(conf) {
   }, conf);
 
   var upstream = myconf.upstream;
-  upstream.bind('added', function(event) {
+  upstream.bind('added', function(id, item, event) {
     if (myconf.match(event.entry)) {
       entries.create(event.entry);
 
-      self.trigger('added', event);
+      self.trigger('added', id, item, event);
     }
   });
-  upstream.bind('removed', function(event) {
+  upstream.bind('removed', function(id, item, event) {
     var existed = entries.read(event.entryId);
     if (existed !== undefined) {
       entries.remove(event.entryId);
 
-      self.trigger('removed', event);
+      self.trigger('removed', id, item, event);
     }
   });
-  upstream.bind('updated', function(event) {
+  upstream.bind('updated', function(id, item, event) {
     var existed = entries.read(event.entryId);
     if (existed !== undefined) {
       entries.update(event.entryId, event.entry);
 
       if (myconf.useRemovedAdded === true) {
-        self.trigger('removed', event);
-        self.trigger('added', event);
+        self.trigger('removed', id, item, event);
+        self.trigger('added', id, item, event);
       } else {
-        self.trigger('updated', event);
+        self.trigger('updated', id, item, event);
       }
     }
   });
@@ -1455,14 +1610,14 @@ function FilteredEntries(conf) {
       var id = result.left[i];
       var entry = conf.upstream.read(id);
       entries.remove(id);
-      this.trigger('removed', {entryId: id, entry: entry});
+      this.trigger('removed', id, entry, {entryId: id, entry: entry});
     }
     result.right.reverse();
     for (var i=0, len=result.right.length; i < len; i++) {
       var id = result.right[i];
       var entry = conf.upstream.read(id);
       entries.create(entry);
-      this.trigger('added', {entryId: id, entry: entry});
+      this.trigger('added', id, entry, {entryId: id, entry: entry});
     }
   };
 
