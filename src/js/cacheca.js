@@ -1100,6 +1100,7 @@ function RESTfulDataSet(conf) {
   var ajaxcommon = function(options, fn, err) {
     var ajaxoptions = $.extend({
         success: function(data) {
+          data = data || {};
           $.extend(options.entity, data.entity);
           $.extend(options.oldentity, data.oldentity);
           fn(data);
