@@ -1007,7 +1007,9 @@ function RESTfulDataSet(conf) {
       return json[conf.key];
     },
     url: conf.baseurl + '/' + conf.entitytype,
-    baredata: false
+    baredata: false,
+    presend: function(jqXHR, settings) {
+    }
   }, conf);
 
   var rectangular = function(data, fn) {
@@ -1065,10 +1067,11 @@ function RESTfulDataSet(conf) {
       xhrFields: {
         withCredentials: true
       },
-      /*
-      beforeSend: function(xhr) {
-        xhr.withCredentials = true;
-      },*/
+      contentType: 'application/json',
+      beforeSend: function(jqXHR, settings) {
+        jqXHR.withCredentials = true;
+        presend(jqXHR, settings);
+      },
       success: function(raw) {
         var count = 0;
         try {
@@ -1110,10 +1113,11 @@ function RESTfulDataSet(conf) {
         xhrFields: {
           withCredentials: true
         },
-        /*
-        beforeSend: function(xhr) { // back-compat with jquery 1.4 and earlier
-          xhr.withCredentials = true;
-        },*/
+        contentType: 'application/json',
+        beforeSend: function(jqXHR, settings) {
+          jqXHR.withCredentials = true; // back-compat with jquery 1.4 and earlier
+          presend(jqXHR, settings);
+        },
         async: true,
         entity: {},
         oldentity: {}
