@@ -1006,7 +1006,8 @@ function RESTfulDataSet(conf) {
     getItems: function(json) {
       return json[conf.key];
     },
-    url: conf.baseurl + '/' + conf.entitytype
+    url: conf.baseurl + '/' + conf.entitytype,
+    baredata: false
   }, conf);
 
   var rectangular = function(data, fn) {
@@ -1061,10 +1062,10 @@ function RESTfulDataSet(conf) {
       type: 'GET',
       url: url,
       dataType: 'json',
-      /*
       xhrFields: {
         withCredentials: true
       },
+      /*
       beforeSend: function(xhr) {
         xhr.withCredentials = true;
       },*/
@@ -1106,10 +1107,10 @@ function RESTfulDataSet(conf) {
           err(exception);
         },
         dataType: 'json',
-        /*
         xhrFields: {
           withCredentials: true
         },
+        /*
         beforeSend: function(xhr) { // back-compat with jquery 1.4 and earlier
           xhr.withCredentials = true;
         },*/
@@ -1142,6 +1143,7 @@ function RESTfulDataSet(conf) {
   };
 
   innerset.create = function(entity, fn, errFn) {
+    console.warn('new entity: ' + JSON.stringify(entity));
     Arguments.assertNonNull(entity, conf.name + "(RESTFulDataSet).create: expect argument 'entity'.");
     Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
 
@@ -1149,7 +1151,8 @@ function RESTfulDataSet(conf) {
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var url = myconf.url + '/';
-    var data = JSON.stringify({entity:entity, oldentity: entity});
+    var json = myconf.baredata? entity: {entity: entity};
+    var data = JSON.stringify(json);
     var ajaxFn = function(data) {
       var id = conf.getId(data);
       fn(id, data);
@@ -1174,7 +1177,8 @@ function RESTfulDataSet(conf) {
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
     var url = myconf.url + '/' + encodeURIComponent(id);
-    var data = JSON.stringify({entity:entity, oldentity: oldentity});
+    var json = myconf.baredata? entity: {entity: entity, oldentity: oldentity};
+    var data = JSON.stringify(json);
     var ajaxFn = function(data) {
       var id = conf.getId(data);
       fn(id, data);
@@ -1201,7 +1205,9 @@ function RESTfulDataSet(conf) {
     var ajaxFn = function(data) {
       fn(id, data);
     };
-    ajaxcommon({type: 'DELETE', method: "remove", url: url, data: JSON.stringify({oldentity: oldentity})}, ajaxFn, errFn);
+    var json = myconf.baredata? {}: {oldentity: oldentity};
+    var data = JSON.stringify(json);
+    ajaxcommon({type: 'DELETE', method: "remove", url: url, data: data}, ajaxFn, errFn);
   };
 
   innerset.browse = function(fn, errFn, sumFn, filter) {
