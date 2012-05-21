@@ -27,7 +27,7 @@
         ok($.isFunction(ds.unbind), "Expect unbind() to be function");
         ok($.isFunction(ds.trigger), "Expect trigger() to be function");
         
-        same(ds.name, name, "Except name equal to config");
+        deepEqual(ds.name, name, "Except name equal to config");
         ok($.isFunction(ds.read), "Expect read() to be function");
         ok($.isFunction(ds.update), "Expect update() to be function");
         ok($.isFunction(ds.create), "Expect create() to be function");
