@@ -1101,9 +1101,13 @@ function RESTfulDataSet(conf) {
     var ajaxoptions = $.extend({
         success: function(data) {
           data = data || {};
-          $.extend(options.entity, data.entity);
-          $.extend(options.oldentity, data.oldentity);
-          fn(data);
+          if (myconf.baredata) {
+            $.extend(options.entity, data);
+          } else {
+            $.extend(options.entity, data.entity);
+            $.extend(options.oldentity, data.oldentity);
+          }
+          fn(options.entity, options.oldentity);
         },
         error: function(request, textStatus, errorThrown) {
           var exception = {datasetname: instance.name, status: request.status, message: request.statusText, url: myconf.url, method: options.method, kind: textStatus};
