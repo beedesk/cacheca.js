@@ -1152,7 +1152,6 @@ function RESTfulDataSet(conf) {
   };
 
   innerset.create = function(entity, fn, errFn) {
-    console.warn('new entity: ' + JSON.stringify(entity));
     Arguments.assertNonNull(entity, conf.name + "(RESTFulDataSet).create: expect argument 'entity'.");
     Arguments.warnNonNull(fn, conf.name + ".create: expect argument 'fn'.");
 
