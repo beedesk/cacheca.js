@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010 - 2011, BeeDesk, Inc., unless otherwise noted.
+ * Copyright (c) 2010 - 2012, BeeDesk, Inc., unless otherwise noted.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  * 2) Finders methods
  * 3) interface for initialization / finalization
  *
- * @author: tyip AT beedesk DOT com
+ * @author: thomas at beedesk DOT com
  */
 function BareSet(conf) {
 
@@ -64,7 +64,7 @@ function BareSet(conf) {
  * Binder is a dispatch multiplexer.
  *
  * @param conf
- * @author: tyip AT beedesk DOT com
+ * @author: thomas at beedesk DOT com
  */
 function Binder(conf) {
 
@@ -82,7 +82,7 @@ function Binder(conf) {
  * Supports '*', 'added', 'updated', 'removed' events.
  * Supports 'error/*', 'error/addded', 'error/updated', 'error/removed' events
  *
- * @author: tyip AT beedesk DOT com
+ * @author: thomas at beedesk DOT com
  */
 function DataSet(conf) {
 
@@ -148,10 +148,10 @@ var CRUDs = new function() {
 };
 
 /**
- * SimpleBareSet is an implementation of BareSet. It keeps all entry
- * in an associate hash object.
+ * SimpleBareSet is an implementation of BareSet. It keeps all entries
+ * in an JavaScript object (associative arrays).
  *
- * @author: tyip AT beedesk DOT com
+ * @author: thomas at beedesk DOT com
  */
 function SimpleBareSet(conf) {
   var instance = this;
@@ -353,7 +353,7 @@ function SimpleBareSet(conf) {
  * registered handlers.
  *
  * @param conf
- * @author: tyip AT beedesk DOT com
+ * @author: thomas at beedesk DOT com
  */
 function SimpleBinder(conf) {
   var handlers = new SimpleBareSet(conf);
@@ -409,6 +409,7 @@ function SimpleBinder(conf) {
  * By default, it use SimpleBareSet as the underneath components to
  * store the actual entry. It can be overriden by conf.innerset.
  *
+ * @param listwithidonly -- 
  * @see DataSet
  */
 function SimpleDataSet(conf) {
@@ -422,7 +423,8 @@ function SimpleDataSet(conf) {
     },
     isEventEnabled: function() {
       return true;
-    }
+    },
+    listwithidonly: true
   }, conf);
 
   var entries = new DataSet(conf);
@@ -454,9 +456,13 @@ function SimpleDataSet(conf) {
       innerset.start();
     }
     entries.browse(function(id, item) {
-      entries.read(id, function(id, item) {
+      if (myconf.listwithidonly) {
+        entries.read(id, function(id, item) {
+          entries.trigger('added', id, item, {entryId: id, entry: item});
+        });
+      } else {
         entries.trigger('added', id, item, {entryId: id, entry: item});
-      });
+      }
     }, function(exception) {
       entries.trigger("error", exception);
     });
@@ -730,7 +736,7 @@ function PassthruDataSet(conf) {
  * The CachedBareSet cache all entries from storeset into an cacheset.
  *
  * @see DataSet
- * Author: tyip AT beedesk DOT com
+ * Author: thomas at beedesk DOT com
  */
 function CachedDataSet(conf) {
 
@@ -979,13 +985,19 @@ function CachedDataSet(conf) {
 }
 
 /**
- * @author: tyip AT beedesk DOT com
+ * A DataSet that based off of a standard RESTful backend.
+ * 
+ * @param conf.baseurl -- required
+ * @param conf.entitytype -- required
+ * @param conf.key -- The json key for the list of items (optional, default: 'items').
+ * @param conf.presend -- callback method for ajax beforeSend() (optional, default: noop).
+ * @param conf.baredata -- `true` indicates `GET` method to accept 'bare' format. (optional, default: false)
+ * @param conf.listwithidonly -- `true` indicates `GET List` method returns a list of id without the 
+ *            details. An additional GET method will be used to fetch the item details. (optional, default: true, pass to SimpleDataSet)
+ *
+ * @author: thomas at beedesk DOT com
  */
 function RESTfulDataSet(conf) {
-
-  var innerset = new BareSet($.extend({}, conf, {name: conf.name + "-inner"}));
-
-  var instance = new SimpleDataSet($.extend(conf, {innerset: innerset}));
 
   // error check
   if (conf.baseurl === undefined) {
@@ -994,6 +1006,10 @@ function RESTfulDataSet(conf) {
   if (conf.entitytype=== undefined) {
     console.error('Parameter "entitytype" is not specified.'); // fatal error
   }
+
+  var innerset = new BareSet($.extend({}, conf, {name: conf.name + "-inner"}));
+
+  var instance = new SimpleDataSet($.extend(conf, {innerset: innerset}));
 
   var myconf = $.extend({
     tokens: function(item) {
@@ -1231,7 +1247,7 @@ function RESTfulDataSet(conf) {
 /**
  * Similar to RESTFulDataSet, but going thru JSONP
  *
- * @author: tyip AT beedesk DOT com
+ * @author: thomas at beedesk DOT com
  */
 function JSONPDataSet(conf) {
 
