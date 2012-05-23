@@ -1088,7 +1088,7 @@ function RESTfulDataSet(conf) {
         jqXHR.withCredentials = true;
         presend(jqXHR, settings);
       },
-      success: function(raw) {
+      success: function(raw, textStatus, jqXHR) {
         var count = 0;
         try {
           var data = myconf.normalize(raw);
@@ -1115,7 +1115,7 @@ function RESTfulDataSet(conf) {
 
   var ajaxcommon = function(options, fn, err) {
     var ajaxoptions = $.extend({
-        success: function(data) {
+        success: function(data, textStatus, jqXHR) {
           data = data || {};
           if (myconf.baredata) {
             $.extend(options.entity, data);
@@ -1181,7 +1181,35 @@ function RESTfulDataSet(conf) {
       var id = conf.getId(data);
       fn(id, data);
     };
-    ajaxcommon({type: 'POST', method: "create", url: url, data: data, entity: entity}, ajaxFn, errFn);
+    var options = {
+      type: 'POST', method: "create", url: url, data: data, entity: entity,
+      success: function(data, textStatus, jqXHR) {
+        data = data || {};
+
+        var location = jqXHR.getResponseHeader('Location');
+        var id;
+        if (!!location) {
+          var url = URLs.parse(location);
+          var segments = url.segments;
+          if (segments.length > 1) {
+            id = segments[segments.length - 2];
+            console.warn('======= segements' + segments + ' id: ' + segments[segments.length - 2]);
+          }
+        }
+        if (data['id'] === undefined && id !== undefined) {
+          data = $.extend(data, {id: id});
+        }
+
+        if (myconf.baredata) {
+          $.extend(options.entity, data);
+        } else {
+          $.extend(options.entity, data.entity);
+          $.extend(options.oldentity, data.oldentity);
+        }
+        fn(id, options.entity, options.oldentity);
+      },
+    };
+    ajaxcommon(options, ajaxFn, errFn);
   };
 
   innerset.update = function(id, entity, oldentity, fn, errFn) {
@@ -1321,7 +1349,7 @@ function JSONPDataSet(conf) {
       xhrFields: {
         withCredentials: true
       },
-      success: function(raw) {
+      success: function(raw, textStatus, jqXHR) {
         var count = 0;
         try {
           var data = normalize(raw);
@@ -1495,7 +1523,7 @@ function AjaxDataSet(conf) {
       type: 'GET',
       url: myconf.url,
       dataType: 'json',
-      success: function(data) {
+      success: function(data, textStatus, jqXHR) {
         var raw = myconf.normalize(data);
 
         var list = myconf.getItems(raw);
