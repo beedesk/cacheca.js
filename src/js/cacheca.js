@@ -1086,7 +1086,7 @@ function RESTfulDataSet(conf) {
       contentType: 'application/json',
       beforeSend: function(jqXHR, settings) {
         jqXHR.withCredentials = true;
-        presend(jqXHR, settings);
+        conf.presend(jqXHR, settings);
       },
       success: function(raw, textStatus, jqXHR) {
         var count = 0;
