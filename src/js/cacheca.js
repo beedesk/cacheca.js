@@ -1086,7 +1086,7 @@ function RESTfulDataSet(conf) {
       contentType: 'application/json',
       beforeSend: function(jqXHR, settings) {
         jqXHR.withCredentials = true;
-        conf.presend(jqXHR, settings);
+        myconf.presend(jqXHR, settings);
       },
       success: function(raw, textStatus, jqXHR) {
         var count = 0;
@@ -1137,7 +1137,7 @@ function RESTfulDataSet(conf) {
         contentType: 'application/json',
         beforeSend: function(jqXHR, settings) {
           jqXHR.withCredentials = true; // back-compat with jquery 1.4 and earlier
-          presend(jqXHR, settings);
+          myconf.presend(jqXHR, settings);
         },
         async: true,
         entity: {},
