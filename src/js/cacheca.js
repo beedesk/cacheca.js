@@ -992,6 +992,7 @@ function CachedDataSet(conf) {
  * @param conf.key -- The json key for the list of items (optional, default: 'items').
  * @param conf.presend -- callback method for ajax beforeSend() (optional, default: noop).
  * @param conf.baredata -- `true` indicates `GET` method to accept 'bare' format. (optional, default: false)
+ * @param conf.fetchaftercreate -- `true` indicates a `GET` is to be used to fetch the newly created item. (optional, default: false)
  * @param conf.listwithidonly -- `true` indicates `GET List` method returns a list of id without the 
  *            details. An additional GET method will be used to fetch the item details. (optional, default: true, pass to SimpleDataSet)
  *
@@ -1024,6 +1025,7 @@ function RESTfulDataSet(conf) {
     },
     url: conf.baseurl + '/' + conf.entitytype,
     baredata: false,
+    fetchaftercreate: false,
     presend: function(jqXHR, settings) {
     }
   }, conf);
@@ -1093,7 +1095,14 @@ function RESTfulDataSet(conf) {
         try {
           var data = myconf.normalize(raw);
           itemize(data, function(id, item) {
-            fn(id, item);
+            if ($.isFunction(filters)) {
+              var match = filters(id, item);
+              if (match) {
+                fn(id, item);
+              }
+            } else {
+              fn(id, item);
+            }
             count++;
           });
         } catch(e) {
@@ -1187,7 +1196,7 @@ function RESTfulDataSet(conf) {
         data = data || {};
 
         var location = jqXHR.getResponseHeader('Location');
-        var id;
+        var id = data['id'];
         if (!!location) {
           var url = URLs.parse(location);
           var segments = url.segments;
@@ -1196,17 +1205,15 @@ function RESTfulDataSet(conf) {
             console.warn('======= segements' + segments + ' id: ' + segments[segments.length - 2]);
           }
         }
-        if (data['id'] === undefined && id !== undefined) {
+        if (id !== undefined) {
           data = $.extend(data, {id: id});
         }
-
-        if (myconf.baredata) {
-          $.extend(options.entity, data);
+        if (!myconf.fetchaftercreate) {
+          $.extend(entity, data);
+          fn(id, entity);
         } else {
-          $.extend(options.entity, data.entity);
-          $.extend(options.oldentity, data.oldentity);
+          innerset.read(id, fn, errFn);
         }
-        fn(id, options.entity, options.oldentity);
       },
     };
     ajaxcommon(options, ajaxFn, errFn);
