@@ -1235,14 +1235,17 @@ function RESTfulDataSet(conf) {
     fn = CRUDs.getCheckedFn(fn);
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
-    var url = myconf.url + '/' + encodeURIComponent(id);
+    var url = myconf.url + '/' + encodeURIComponent(id) + '/';
     var json = myconf.baredata? entity: {entity: entity, oldentity: oldentity};
     var data = JSON.stringify(json);
     var ajaxFn = function(data) {
       var id = conf.getId(data);
       fn(id, data);
     };
-    ajaxcommon({type: 'PUT', method: "update", url: url, data: data}, ajaxFn, errFn);
+    var options = {
+      type: 'PUT', method: "update", url: url, data: data, entity: entity,        
+    };
+    ajaxcommon(options, ajaxFn, errFn);
   };
 
   innerset.remove = function(id, oldentity, fn, errFn) {
