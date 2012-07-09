@@ -1202,15 +1202,13 @@ function RESTfulDataSet(conf) {
           var segments = url.segments;
           if (segments.length > 1) {
             id = segments[segments.length - 2];
-            console.warn('======= segements' + segments + ' id: ' + segments[segments.length - 2]);
           }
         }
         if (id !== undefined) {
           data = $.extend(data, {id: id});
         }
         if (!myconf.fetchaftercreate) {
-          $.extend(entity, data);
-          fn(id, entity);
+          fn(id, data);
         } else {
           innerset.read(id, fn, errFn);
         }
