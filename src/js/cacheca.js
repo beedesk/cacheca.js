@@ -1076,8 +1076,10 @@ function RESTfulDataSet(conf) {
       console.error('Expect fn parameter.');
       throw 'Expect fn parameter.';
     }
-    var searchString = HashSearch.getSearchString(filters) || '';
-    var url = myconf.url + '/' + searchString;
+    var url = myconf.url + '/';
+    if (!!filters && 'urlsearch' in filters) {
+      url += '?' + filters['urlsearch'];
+    }
     $.ajax({
       type: 'GET',
       url: url,
