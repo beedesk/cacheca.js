@@ -1026,6 +1026,7 @@ function RESTfulDataSet(conf) {
     url: conf.baseurl + '/' + conf.entitytype,
     baredata: false,
     fetchaftercreate: false,
+    fetchafterupdate: false,
     presend: function(jqXHR, settings) {
     }
   }, conf);
@@ -1243,7 +1244,20 @@ function RESTfulDataSet(conf) {
       fn(id, data);
     };
     var options = {
-      type: 'PUT', method: "update", url: url, data: data, entity: entity,        
+      type: 'PUT', method: "update", url: url, data: data, entity: entity, 
+      success: function(data, textStatus, jqXHR) {
+        data = data || {};
+
+        var id = data['id'];
+        if (id !== undefined) {
+          data = $.extend(data, {id: id});
+        }
+        if (!myconf.fetchafterupdate) {
+          fn(id, data);
+        } else {
+          innerset.read(id, fn, errFn);
+        }
+      },
     };
     ajaxcommon(options, ajaxFn, errFn);
   };
