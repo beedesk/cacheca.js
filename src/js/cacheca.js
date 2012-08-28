@@ -520,12 +520,12 @@ function SimpleDataSet(conf) {
     innerset.update(entryId, newentry, oldentry, function(id, item, olditem) {
       fn(id, item, olditem);
       if (myconf.isEventEnabled()) {
-        var event = {entryId: entryId, entry: newentry, oldentry: olditem};
+        var event = {entryId: entryId, entry: item, oldentry: olditem};
         if (myconf.useRemovedAdded === true) {
           entries.trigger('removed', entryId, olditem, event);
-          entries.trigger('added', entryId, newentry, event);
+          entries.trigger('added', entryId, item, event);
         } else {
-          entries.trigger('updated', entryId, newentry, event);
+          entries.trigger('updated', entryId, item, event);
         }
       }
     }, myErrFn);
@@ -1215,7 +1215,7 @@ function RESTfulDataSet(conf) {
         } else {
           innerset.read(id, fn, errFn);
         }
-      },
+      }
     };
     ajaxcommon(options, ajaxFn, errFn);
   };
@@ -1244,7 +1244,7 @@ function RESTfulDataSet(conf) {
       fn(id, data);
     };
     var options = {
-      type: 'PUT', method: "update", url: url, data: data, entity: entity, 
+      type: 'PUT', method: "update", url: url, data: data, entity: entity,
       success: function(data, textStatus, jqXHR) {
         data = data || {};
 
@@ -1257,7 +1257,7 @@ function RESTfulDataSet(conf) {
         } else {
           innerset.read(id, fn, errFn);
         }
-      },
+      }
     };
     ajaxcommon(options, ajaxFn, errFn);
   };
@@ -1283,7 +1283,18 @@ function RESTfulDataSet(conf) {
     };
     var json = myconf.baredata? {}: {oldentity: oldentity};
     var data = JSON.stringify(json);
-    ajaxcommon({type: 'DELETE', method: "remove", url: url, data: data}, ajaxFn, errFn);
+    var options = {type: 'DELETE', method: "remove", url: url, data: data,
+      success: function(data, textStatus, jqXHR) {
+        data = data || {};
+
+        var id = data['id'];
+        if (id !== undefined) {
+          data = $.extend(data, {id: id});
+        }
+        fn(id, data);
+      }
+    };
+    ajaxcommon(options, ajaxFn, errFn);
   };
 
   innerset.browse = function(fn, errFn, sumFn, filter) {
