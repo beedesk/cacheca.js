@@ -1277,7 +1277,7 @@ function RESTfulDataSet(conf) {
     fn = CRUDs.getCheckedFn(fn);
     errFn = CRUDs.getCheckedErrorFn(errFn);
 
-    var url = myconf.url + '/' + encodeURIComponent(id);
+    var url = myconf.url + '/' + encodeURIComponent(id) + '/';
     var ajaxFn = function(data) {
       fn(id, data);
     };
