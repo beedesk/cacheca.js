@@ -1176,7 +1176,7 @@ function RESTfulDataSet(conf) {
       var id = conf.getId(data);
       fn(id, data);
     };
-    ajaxcommon({type: 'GET', method: "read", url: url, data: JSON.stringify({}), entity: {}}, ajaxFn, errFn);
+    ajaxcommon({type: 'GET', method: "GET", url: url, data: JSON.stringify({}), entity: {}}, ajaxFn, errFn);
   };
 
   innerset.create = function(entity, fn, errFn) {
@@ -1194,7 +1194,7 @@ function RESTfulDataSet(conf) {
       fn(id, data);
     };
     var options = {
-      type: 'POST', method: "create", url: url, data: data, entity: entity,
+      type: 'POST', method: "POST", url: url, data: data, entity: entity,
       success: function(data, textStatus, jqXHR) {
         data = data || {};
 
@@ -1244,7 +1244,7 @@ function RESTfulDataSet(conf) {
       fn(id, data);
     };
     var options = {
-      type: 'PUT', method: "update", url: url, data: data, entity: entity,
+      type: 'PUT', method: "PUT", url: url, data: data, entity: entity,
       success: function(data, textStatus, jqXHR) {
         data = data || {};
 
@@ -1283,7 +1283,7 @@ function RESTfulDataSet(conf) {
     };
     var json = myconf.baredata? {}: {oldentity: oldentity};
     var data = JSON.stringify(json);
-    var options = {type: 'DELETE', method: "remove", url: url, data: data,
+    var options = {type: 'DELETE', method: "DELETE", url: url, data: data,
       success: function(data, textStatus, jqXHR) {
         data = data || {};
 
@@ -1449,7 +1449,7 @@ function JSONPDataSet(conf) {
       var id = conf.getId(data);
       fn(id, data);
     };
-    ajaxcommon({type: 'GET', method: "read", url: url, data: JSON.stringify({}), entity: {}}, ajaxFn, errFn);
+    ajaxcommon({type: 'GET', method: "GET", url: url, data: JSON.stringify({}), entity: {}}, ajaxFn, errFn);
   };
 
   innerset.create = function(entity, fn, errFn) {
@@ -1465,7 +1465,7 @@ function JSONPDataSet(conf) {
       var id = conf.getId(data);
       fn(id, data);
     };
-    ajaxcommon({type: 'POST', method: "create", url: url, data: data, entity: entity}, ajaxFn, errFn);
+    ajaxcommon({type: 'POST', method: "POST", url: url, data: data, entity: entity}, ajaxFn, errFn);
   };
 
   innerset.update = function(id, entity, oldentity, fn, errFn) {
@@ -1490,7 +1490,7 @@ function JSONPDataSet(conf) {
       var id = conf.getId(data);
       fn(id, data);
     };
-    ajaxcommon({type: 'PUT', method: "update", url: url, data: data}, ajaxFn, errFn);
+    ajaxcommon({type: 'PUT', method: "PUT", url: url, data: data}, ajaxFn, errFn);
   };
 
   innerset.remove = function(id, oldentity, fn, errFn) {
@@ -1512,7 +1512,7 @@ function JSONPDataSet(conf) {
     var ajaxFn = function(data) {
       fn(id, data);
     };
-    ajaxcommon({type: 'DELETE', method: "remove", url: url, data: JSON.stringify({oldentity: oldentity})}, ajaxFn, errFn);
+    ajaxcommon({type: 'DELETE', method: "DELETE", url: url, data: JSON.stringify({oldentity: oldentity})}, ajaxFn, errFn);
   };
 
   innerset.browse = function(fn, errFn, sumFn, filter) {
