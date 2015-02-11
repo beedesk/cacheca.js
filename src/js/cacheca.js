@@ -1083,6 +1083,7 @@ function RESTfulDataSet(conf) {
     }
     $.ajax({
       type: 'GET',
+      method: 'GET',
       url: url,
       dataType: 'json',
       xhrFields: {
